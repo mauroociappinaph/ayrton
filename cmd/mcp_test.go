@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/mark3labs/mcp-go/client"
@@ -13,7 +14,13 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-const testBin = "ayrton-test"
+func testBinName() string {
+	name := "ayrton-test"
+	if runtime.GOOS == "windows" {
+		name += ".exe"
+	}
+	return name
+}
 
 func TestMCPServer_ListTools(t *testing.T) {
 	ctx := context.Background()
@@ -120,7 +127,7 @@ func startTestMCPServer(t *testing.T, ctx context.Context) (*client.Client, func
 
 	// Build the binary to a temp location
 	tmpDir := t.TempDir()
-	binPath := filepath.Join(tmpDir, testBin)
+	binPath := filepath.Join(tmpDir, testBinName())
 
 	// Build the main binary (package main at project root, one level up from cmd/)
 	buildCmd := exec.Command("go", "build", "-o", binPath, ".")
