@@ -17,9 +17,21 @@ jobs:
     if: github.actor == 'dependabot[bot]' && github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Rebase PR branch onto base
+        run: |
+          gh pr update-branch "$PR_URL"
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Enable auto-merge (squash)
         run: |
-          gh pr merge --auto --squash "$PR_URL"
+          gh pr merge --auto --squash "$PR_URL" || true
         env:
           PR_URL: ${{ github.event.pull_request.html_url }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
