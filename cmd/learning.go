@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"math"
 
 	"github.com/spf13/cobra"
 	"github.com/mauroociappinaph/ayrton/internal/learning"
@@ -27,8 +28,8 @@ var learnCmd = &cobra.Command{
 		contextStr, _ := cmd.Flags().GetString("context")
 		outcome, _ := cmd.Flags().GetString("outcome")
 		confidence, _ := cmd.Flags().GetFloat64("confidence")
-		if confidence < 0 || confidence > 1 {
-			return fmt.Errorf("confidence must be between 0 and 1, got %.2f", confidence)
+		if math.IsNaN(confidence) || confidence < 0 || confidence > 1 {
+			return fmt.Errorf("confidence must be between 0 and 1, got %v", confidence)
 		}
 
 		agent, err := learning.NewAgent("project")

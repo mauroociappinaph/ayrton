@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -154,7 +155,13 @@ func (c *Client) initSchema() error {
 
 	// After the (b) migration, the table definitely has the project column.
 	// Migration (a): add project column if still missing (catches edge cases).
-	_, _ = c.db.Exec("ALTER TABLE observations ADD COLUMN project TEXT NOT NULL DEFAULT ''")
+	if _, err := c.db.Exec("ALTER TABLE observations ADD COLUMN project TEXT NOT NULL DEFAULT ''"); err != nil {
+		// "duplicate column" is expected when the column already exists;
+		// any other error indicates a real problem.
+		if !strings.Contains(err.Error(), "duplicate column") {
+			log.Printf("warning: add project column (may already exist): %v", err)
+		}
+	}
 
 	// Phase 3: Indexes, FTS5, and triggers (all use IF NOT EXISTS)
 	if _, err := c.db.Exec(`
@@ -190,7 +197,9 @@ func (c *Client) initSchema() error {
 
 	// Rebuild FTS index if data was migrated before triggers existed (Phase 2 migration).
 	if c.needsFTSRebuild {
-		_, _ = c.db.Exec("INSERT INTO observations_fts(observations_fts) VALUES('rebuild')")
+		if _, err := c.db.Exec("INSERT INTO observations_fts(observations_fts) VALUES('rebuild')"); err != nil {
+			log.Printf("warning: FTS rebuild: %v", err)
+		}
 	}
 
 	return nil
@@ -386,11 +395,14 @@ func (c *Client) ListByTopic(ctx context.Context, topicKey, scope string) ([]Obs
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
+	// Escape LIKE wildcards so `_` and `%` in topicKey are literal
+	escaped := strings.NewReplacer("_", `\_`, "%", `\%`).Replace(topicKey)
+
 	rows, err := c.db.QueryContext(ctx, `
 		SELECT id, title, type, scope, project, topic_key, content, created_at, updated_at
-		FROM observations WHERE topic_key LIKE ? AND scope=?
+		FROM observations WHERE topic_key LIKE ? ESCAPE '\' AND scope=?
 		ORDER BY created_at DESC
-	`, topicKey+"%", scope)
+	`, escaped+"%", scope)
 	if err != nil {
 		return nil, err
 	}

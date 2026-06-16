@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/mauroociappinaph/ayrton/internal/engram"
@@ -61,7 +62,9 @@ func (a *Agent) Learn(ctx context.Context, pattern *Pattern) error {
 	// Increment UsageCount if this pattern already exists
 	topicKey := fmt.Sprintf("learning/patterns/%s/%s/%s", pattern.Category, a.scope, patternID)
 	existing, err := a.client.ListByTopic(ctx, topicKey, a.scope)
-	if err == nil {
+	if err != nil {
+		log.Printf("warning: failed to check existing pattern (will save as new): %v", err)
+	} else {
 		for _, e := range existing {
 			if p := a.parsePattern(e.Content); p != nil {
 				pattern.UsageCount = p.UsageCount + 1

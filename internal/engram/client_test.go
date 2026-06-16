@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -310,8 +309,3 @@ func TestObservation_ToJSON(t *testing.T) {
 	}
 }
 
-func TestMain(m *testing.M) {
-	// Ensure temp dir exists
-	_ = os.MkdirAll("/tmp/engram_test", 0755)
-	os.Exit(m.Run())
-}

@@ -218,8 +218,12 @@ var sddVerifyCmd = &cobra.Command{
 	Use:   "verify",
 	Short: "Run tests and verify implementation",
 	RunE: func(cmd *cobra.Command, args []string) error {
+		issueNum, _ := cmd.Flags().GetInt("issue")
 		results := runVerification()
 
+		if issueNum != 0 {
+			fmt.Fprintf(os.Stderr, "Verifying implementation for issue #%d\n", issueNum)
+		}
 		fmt.Println()
 		fmt.Println("╔══════════════════════════════════════════╗")
 		fmt.Println("║        SDD Verification Report           ║")
