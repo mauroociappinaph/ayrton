@@ -1,3 +1,4 @@
+- fix: resolve Judgment Day CRITICALs and WARNINGs; add integration tests (94306cc)
 - feat: add docs generation + Notion sync to SDD workflow (8e424ab)
 - ci: remove cmd/chat.go (broken import) (1fc621a)
 - ci: remove broken pkg/ directory from repo (79f6db9)
