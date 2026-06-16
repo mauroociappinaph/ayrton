@@ -68,7 +68,7 @@ release: ## Release completo con goreleaser (requiere tag)
 version: ## Muestra próxima versión (patch bump)
 	@git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' | awk -F. '{print "v" $$1 "." $$2 "." $$3+1}' || echo "v0.1.0"
 
-ship: check ## 🚀 Pipeline completo: validate → commit → push → tag → release
+ship: check ## 🚀 Pipeline completo: validate → tag → push → release
 	@echo "🚀 Shipping..."
 	@VERSION=$$(make -s version); \
 	echo "📦 Version: $$VERSION"; \
@@ -76,6 +76,12 @@ ship: check ## 🚀 Pipeline completo: validate → commit → push → tag → 
 	git push origin main; \
 	git push origin $$VERSION; \
 	echo "✅ Shipped $$VERSION"
+
+ship-dry: check ## 🧪 Dry-run: muestra qué haria ship sin ejecutar
+	@VERSION=$$(make -s version); \
+	echo "📦 Would tag: $$VERSION"; \
+	echo "📤 Would push: origin main + origin $$VERSION"; \
+	echo "✅ Dry-run complete - no changes made"
 
 ship-minor: check ## Ship con version minor bump
 	@VERSION=$$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' | awk -F. '{print "v" $$1 "." $$2+1 ".0"}'); \
