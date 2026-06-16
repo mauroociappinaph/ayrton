@@ -7,7 +7,7 @@ require (
 	github.com/spf13/viper v1.19.0
 	github.com/stretchr/testify v1.9.0
 	modernc.org/sqlite v1.46.1
-	golangolang.org/x/exp v0.0.0-20230905200255-921286631fa9
+	golang.org/x/exp v0.0.0-20230905200255-921286631fa9
 golang.org/x/sys v0.30.0
 )
 
