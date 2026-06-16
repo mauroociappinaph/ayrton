@@ -44,7 +44,7 @@ jobs:
         shell: bash
 
       - name: Upload coverage
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v7
         with:
           files: ${{ env.COVERAGE_FILE }}
           flags: unittests
