@@ -1,14 +1,14 @@
 module github.com/mauroociappinaph/ayrton
 
-go 1.25.0
+go 1.23
 
 require (
 	github.com/spf13/cobra v1.8.1
 	github.com/spf13/viper v1.19.0
 	github.com/stretchr/testify v1.9.0
-	golang.org/x/exp v0.0.0-20251023183803-a4bb9ffd2546
-	golang.org/x/sys v0.41.0
 	modernc.org/sqlite v1.46.1
+	golang.org/x/exp v0.0.0-20230905200255-921286631fa9
+	golang.org/x/sys v0.41.0
 )
 
 require (
