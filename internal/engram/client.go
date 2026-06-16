@@ -18,9 +18,10 @@ import (
 
 // Client provides access to Engram memory store
 type Client struct {
-	mu     sync.RWMutex
-	db     *sql.DB
-	dbPath string
+	mu              sync.RWMutex
+	db              *sql.DB
+	dbPath          string
+	needsFTSRebuild bool // set during migration, triggers FTS content sync after Phase 3
 }
 
 // Observation represents a memory observation
@@ -83,52 +84,118 @@ func NewClientWithPath(dbPath string) (*Client, error) {
 
 // initSchema initializes the database schema with FTS5
 func (c *Client) initSchema() error {
-	schema := `
-	CREATE TABLE IF NOT EXISTS observations (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		title TEXT NOT NULL,
-		type TEXT NOT NULL,
-		scope TEXT NOT NULL DEFAULT 'project',
-		project TEXT NOT NULL DEFAULT '',
-		topic_key TEXT,
-		content TEXT NOT NULL,
-		created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-		updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-		UNIQUE(topic_key, scope)
-	);
+	// Phase 1: Create base table (IF NOT EXISTS skips if already present)
+	if _, err := c.db.Exec(`
+		CREATE TABLE IF NOT EXISTS observations (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			title TEXT NOT NULL,
+			type TEXT NOT NULL,
+			scope TEXT NOT NULL DEFAULT 'project',
+			project TEXT NOT NULL DEFAULT '',
+			topic_key TEXT,
+			content TEXT NOT NULL,
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			UNIQUE(topic_key, scope)
+		);
+	`); err != nil {
+		return fmt.Errorf("create table: %w", err)
+	}
 
-	CREATE INDEX IF NOT EXISTS idx_observations_topic ON observations(topic_key);
-	CREATE INDEX IF NOT EXISTS idx_observations_type ON observations(type);
-	CREATE INDEX IF NOT EXISTS idx_observations_scope ON observations(scope);
-	CREATE INDEX IF NOT EXISTS idx_observations_project ON observations(project);
-	CREATE INDEX IF NOT EXISTS idx_observations_created ON observations(created_at);
+	// Phase 2: Migration for pre-v1.1 databases.
+	//
+	// Old databases may be missing:
+	//   a) the `project` column (added to CREATE TABLE after initial release)
+	//   b) the UNIQUE(topic_key, scope) constraint (SQLite can't ALTER to add one)
+	//
+	// Detect case (b) by checking for the auto-generated unique index name.
+	// If missing, recreate the table preserving all existing data.
+	var hasUnique bool
+	err := c.db.QueryRow(
+		`SELECT COUNT(*) > 0 FROM sqlite_master WHERE type='index' AND tbl_name='observations' AND name LIKE 'sqlite_autoindex_observations_%'`,
+	).Scan(&hasUnique)
+	if err == nil && !hasUnique {
+		if _, err := c.db.Exec(`
+			DROP TRIGGER IF EXISTS observations_ai;
+			DROP TRIGGER IF EXISTS observations_ad;
+			DROP TRIGGER IF EXISTS observations_au;
+			DROP TABLE IF EXISTS observations_fts;
+			ALTER TABLE observations RENAME TO observations_old;
+		`); err != nil {
+			return fmt.Errorf("migrate: rename old table: %w", err)
+		}
 
-	-- FTS5 virtual table for full-text search
-	CREATE VIRTUAL TABLE IF NOT EXISTS observations_fts USING fts5(
-		title, content, type, scope, project, topic_key,
-		content='observations', content_rowid='id'
-	);
+		if _, err := c.db.Exec(`
+			CREATE TABLE observations (
+				id INTEGER PRIMARY KEY AUTOINCREMENT,
+				title TEXT NOT NULL,
+				type TEXT NOT NULL,
+				scope TEXT NOT NULL DEFAULT 'project',
+				project TEXT NOT NULL DEFAULT '',
+				topic_key TEXT,
+				content TEXT NOT NULL,
+				created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+				updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+				UNIQUE(topic_key, scope)
+			);
 
-	-- Triggers to keep FTS in sync
-	CREATE TRIGGER IF NOT EXISTS observations_ai AFTER INSERT ON observations BEGIN
-		INSERT INTO observations_fts(rowid, title, content, type, scope, project, topic_key)
-		VALUES (new.id, new.title, new.content, new.type, new.scope, new.project, new.topic_key);
-	END;
+			INSERT INTO observations(id, title, type, scope, project, topic_key, content, created_at, updated_at)
+			SELECT id, title, type, scope, '', topic_key, content, created_at, updated_at
+			FROM observations_old
+			WHERE id IN (SELECT MAX(id) FROM observations_old GROUP BY topic_key, scope);
 
-	CREATE TRIGGER IF NOT EXISTS observations_ad AFTER DELETE ON observations BEGIN
-		INSERT INTO observations_fts(observations_fts, rowid) VALUES ('delete', old.id);
-	END;
+			DROP TABLE observations_old;
+		`); err != nil {
+			return fmt.Errorf("migrate: recreate table: %w", err)
+		}
 
-	CREATE TRIGGER IF NOT EXISTS observations_au AFTER UPDATE ON observations BEGIN
-		INSERT INTO observations_fts(observations_fts, rowid, title, content, type, scope, project, topic_key)
-		VALUES ('delete', old.id, old.title, old.content, old.type, old.scope, old.project, old.topic_key);
-		INSERT INTO observations_fts(rowid, title, content, type, scope, project, topic_key)
-		VALUES (new.id, new.title, new.content, new.type, new.scope, new.project, new.topic_key);
-	END;
-	`
+		// Schedule FTS rebuild to backfill the FTS index for migrated rows
+		// (the triggers weren't alive during the INSERT INTO above).
+		c.needsFTSRebuild = true
+	}
 
-	_, err := c.db.Exec(schema)
-	return err
+	// After the (b) migration, the table definitely has the project column.
+	// Migration (a): add project column if still missing (catches edge cases).
+	_, _ = c.db.Exec("ALTER TABLE observations ADD COLUMN project TEXT NOT NULL DEFAULT ''")
+
+	// Phase 3: Indexes, FTS5, and triggers (all use IF NOT EXISTS)
+	if _, err := c.db.Exec(`
+		CREATE INDEX IF NOT EXISTS idx_observations_topic ON observations(topic_key);
+		CREATE INDEX IF NOT EXISTS idx_observations_type ON observations(type);
+		CREATE INDEX IF NOT EXISTS idx_observations_scope ON observations(scope);
+		CREATE INDEX IF NOT EXISTS idx_observations_project ON observations(project);
+		CREATE INDEX IF NOT EXISTS idx_observations_created ON observations(created_at);
+
+		CREATE VIRTUAL TABLE IF NOT EXISTS observations_fts USING fts5(
+			title, content, type, scope, project, topic_key,
+			content='observations', content_rowid='id'
+		);
+
+		CREATE TRIGGER IF NOT EXISTS observations_ai AFTER INSERT ON observations BEGIN
+			INSERT INTO observations_fts(rowid, title, content, type, scope, project, topic_key)
+			VALUES (new.id, new.title, new.content, new.type, new.scope, new.project, new.topic_key);
+		END;
+
+		CREATE TRIGGER IF NOT EXISTS observations_ad AFTER DELETE ON observations BEGIN
+			INSERT INTO observations_fts(observations_fts, rowid) VALUES ('delete', old.id);
+		END;
+
+		CREATE TRIGGER IF NOT EXISTS observations_au AFTER UPDATE ON observations BEGIN
+			INSERT INTO observations_fts(observations_fts, rowid, title, content, type, scope, project, topic_key)
+			VALUES ('delete', old.id, old.title, old.content, old.type, old.scope, old.project, old.topic_key);
+			INSERT INTO observations_fts(rowid, title, content, type, scope, project, topic_key)
+			VALUES (new.id, new.title, new.content, new.type, new.scope, new.project, new.topic_key);
+		END;
+	`); err != nil {
+		return fmt.Errorf("create indexes and FTS: %w", err)
+	}
+
+	// Rebuild FTS index if data was migrated before triggers existed (Phase 2 migration).
+	if c.needsFTSRebuild {
+		_, _ = c.db.Exec("INSERT INTO observations_fts(observations_fts) VALUES('rebuild')")
+	}
+
+	return nil
 }
 
 // Save saves an observation

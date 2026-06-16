@@ -1,9 +1,13 @@
 package cmd
 
 import (
+	"bytes"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 )
@@ -202,24 +206,92 @@ var sddApplyCmd = &cobra.Command{
 	},
 }
 
+// verifyResult holds the outcome of a verification step
+type verifyResult struct {
+	Name   string
+	Passed bool
+	Output string
+	Dur    time.Duration
+}
+
 var sddVerifyCmd = &cobra.Command{
 	Use:   "verify",
 	Short: "Run tests and verify implementation",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		fmt.Println("Running Go tests...")
-		// In real implementation, this would run the test suite
-		// For now, just print the command that would run
-		fmt.Println("  go test -v -race ./...")
-		fmt.Println("  go build ./...")
-		fmt.Println("  golangci-lint run")
-		fmt.Println("\n✅ Verification phase complete (placeholder)")
+		results := runVerification()
+
+		fmt.Println()
+		fmt.Println("╔══════════════════════════════════════════╗")
+		fmt.Println("║        SDD Verification Report           ║")
+		fmt.Println("╚══════════════════════════════════════════╝")
+		fmt.Println()
+
+		allPassed := true
+		for _, r := range results {
+			status := "✅ PASS"
+			if !r.Passed {
+				status = "❌ FAIL"
+				allPassed = false
+			}
+			fmt.Printf("%s  %s  (%s)\n", status, r.Name, r.Dur.Round(time.Millisecond))
+			if !r.Passed || r.Output != "" {
+				fmt.Println(strings.TrimSpace(r.Output))
+				fmt.Println()
+			}
+		}
+
+		fmt.Println(strings.Repeat("─", 46))
+		passed := 0
+		for _, r := range results {
+			if r.Passed {
+				passed++
+			}
+		}
+		fmt.Printf("Results: %d/%d passed\n", passed, len(results))
+
+		if !allPassed {
+			fmt.Println("\n❌ Verification FAILED — fix issues above and re-run")
+			return fmt.Errorf("verification failed")
+		}
+		fmt.Println("\n✅ Verification PASSED — all checks green")
 		return nil
 	},
+}
+
+func runVerification() []verifyResult {
+	var results []verifyResult
+
+	results = append(results, runStep("go vet", "go", "vet", "./..."))
+	results = append(results, runStep("go test -race", "go", "test", "-race", "-count=1", "./..."))
+	results = append(results, runStep("go build", "go", "build", "./..."))
+
+	// golangci-lint is optional (not always installed locally)
+	if _, err := exec.LookPath("golangci-lint"); err == nil {
+		results = append(results, runStep("golangci-lint", "golangci-lint", "run", "--timeout=5m"))
+	}
+
+	return results
+}
+
+func runStep(name string, prog string, args ...string) verifyResult {
+	start := time.Now()
+	var stdout, stderr bytes.Buffer
+
+	cmd := exec.Command(prog, args...)
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	err := cmd.Run()
+	dur := time.Since(start)
+
+	out := strings.TrimSpace(stdout.String() + "\n" + stderr.String())
+	passed := err == nil
+	return verifyResult{Name: name, Passed: passed, Output: out, Dur: dur}
 }
 
 var sddArchiveCmd = &cobra.Command{
 	Use:   "archive",
 	Short: "Archive completed SDD change",
+	Long:  `Clean up .atl artifacts for an issue and close it on GitHub.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		issueNum, _ := cmd.Flags().GetInt("issue")
 
@@ -227,12 +299,64 @@ var sddArchiveCmd = &cobra.Command{
 			return fmt.Errorf("--issue is required")
 		}
 
-		fmt.Fprintf(os.Stderr, "Archiving SDD change for issue #%d...\n", issueNum)
-		fmt.Fprintf(os.Stderr, "  - Syncing delta specs to main branch\n")
-		fmt.Fprintf(os.Stderr, "  - Cleaning up temporary files\n")
-		fmt.Fprintf(os.Stderr, "  - Updating project documentation\n")
-		fmt.Fprintf(os.Stderr, "\n✅ Archive phase complete (placeholder)\n")
+		atlDir := filepath.Join(".atl")
 
+		type artifact struct {
+			Dir  string
+			Path string
+		}
+		var removed []artifact
+
+		// Collect all .atl files for this issue
+		for _, sub := range []string{"proposals", "specs", "designs", "tasks"} {
+			path := filepath.Join(atlDir, sub, fmt.Sprintf("%d.md", issueNum))
+			if _, err := os.Stat(path); err == nil {
+				removed = append(removed, artifact{Dir: sub, Path: path})
+			}
+		}
+
+		// Remove them
+		for _, a := range removed {
+			if err := os.Remove(a.Path); err != nil {
+				fmt.Fprintf(os.Stderr, "⚠️  failed to remove %s: %v\n", a.Path, err)
+			}
+		}
+
+		fmt.Println()
+		fmt.Println("╔══════════════════════════════════════════╗")
+		fmt.Println("║        SDD Archive Report               ║")
+		fmt.Println("╚══════════════════════════════════════════╝")
+		fmt.Println()
+
+		if len(removed) > 0 {
+			fmt.Printf("Cleaned up %d artifact(s) for issue #%d:\n", len(removed), issueNum)
+			for _, a := range removed {
+				fmt.Printf("  🗑️  .atl/%-12s %d.md\n", a.Dir+"/", issueNum)
+			}
+		} else {
+			fmt.Printf("No .atl artifacts found for issue #%d\n", issueNum)
+		}
+		fmt.Println()
+
+		// Close issue on GitHub
+		if _, err := exec.LookPath("gh"); err == nil {
+			fmt.Printf("Closing issue #%d on GitHub...\n", issueNum)
+			cmd := exec.Command("gh", "issue", "close", fmt.Sprintf("%d", issueNum), "--comment", "Archived via `ayrton sdd archive`")
+			var stderr bytes.Buffer
+			cmd.Stderr = &stderr
+			if err := cmd.Run(); err != nil {
+				fmt.Fprintf(os.Stderr, "⚠️  gh issue close failed: %s\n", strings.TrimSpace(stderr.String()))
+			} else {
+				fmt.Printf("✅ Issue #%d closed on GitHub\n", issueNum)
+			}
+		} else {
+			fmt.Fprintf(os.Stderr, "⚠️  gh CLI not found — skipping GitHub issue close\n")
+			fmt.Fprintf(os.Stderr, "   Install: https://cli.github.com/\n")
+		}
+
+		fmt.Println()
+		fmt.Println(strings.Repeat("─", 46))
+		fmt.Println("✅ Archive complete")
 		return nil
 	},
 }
