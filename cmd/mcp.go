@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
@@ -40,7 +41,11 @@ func runMCPServer() error {
 	if err != nil {
 		return fmt.Errorf("init engram: %w", err)
 	}
-	defer client.Close()
+	defer func() {
+		if err := client.Close(); err != nil {
+			slog.Warn("closing engram client", "error", err)
+		}
+	}()
 
 	srv := server.NewMCPServer(
 		"ayrton-memory",

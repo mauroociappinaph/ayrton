@@ -157,7 +157,9 @@ func startTestMCPServer(t *testing.T, ctx context.Context) (*client.Client, func
 	require.NoError(t, err)
 
 	cleanup := func() {
-		mcpClient.Close()
+		if err := mcpClient.Close(); err != nil {
+			t.Logf("close MCP client: %v", err)
+		}
 	}
 
 	return mcpClient, cleanup
