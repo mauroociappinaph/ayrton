@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -268,7 +267,9 @@ func TestSanitizeFTS5Query(t *testing.T) {
 		{"hello world", "\"hello world\""},
 		{"test-query", "test-query"},
 		{"test+query", "test+query"},
-		{"test*query", "test*query"},
+		{"test*query", "testquery"},
+		{"test*", "test*"},
+		{"*test", "test"},
 		{"test(query)", "test(query)"},
 		{"test:query", "test:query"},
 		{"a  b   c", "\"a  b   c\""},
@@ -308,8 +309,3 @@ func TestObservation_ToJSON(t *testing.T) {
 	}
 }
 
-func TestMain(m *testing.M) {
-	// Ensure temp dir exists
-	_ = os.MkdirAll("/tmp/engram_test", 0755)
-	os.Exit(m.Run())
-}

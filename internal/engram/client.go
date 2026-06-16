@@ -2,11 +2,10 @@ package engram
 
 import (
 	"context"
-	"crypto/sha256"
 	"database/sql"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -156,7 +155,13 @@ func (c *Client) initSchema() error {
 
 	// After the (b) migration, the table definitely has the project column.
 	// Migration (a): add project column if still missing (catches edge cases).
-	_, _ = c.db.Exec("ALTER TABLE observations ADD COLUMN project TEXT NOT NULL DEFAULT ''")
+	if _, err := c.db.Exec("ALTER TABLE observations ADD COLUMN project TEXT NOT NULL DEFAULT ''"); err != nil {
+		// "duplicate column" is expected when the column already exists;
+		// any other error indicates a real problem.
+		if !strings.Contains(err.Error(), "duplicate column") {
+			log.Printf("warning: add project column (may already exist): %v", err)
+		}
+	}
 
 	// Phase 3: Indexes, FTS5, and triggers (all use IF NOT EXISTS)
 	if _, err := c.db.Exec(`
@@ -192,7 +197,9 @@ func (c *Client) initSchema() error {
 
 	// Rebuild FTS index if data was migrated before triggers existed (Phase 2 migration).
 	if c.needsFTSRebuild {
-		_, _ = c.db.Exec("INSERT INTO observations_fts(observations_fts) VALUES('rebuild')")
+		if _, err := c.db.Exec("INSERT INTO observations_fts(observations_fts) VALUES('rebuild')"); err != nil {
+			log.Printf("warning: FTS rebuild: %v", err)
+		}
 	}
 
 	return nil
@@ -388,11 +395,14 @@ func (c *Client) ListByTopic(ctx context.Context, topicKey, scope string) ([]Obs
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
+	// Escape LIKE wildcards so `_` and `%` in topicKey are literal
+	escaped := strings.NewReplacer("_", `\_`, "%", `\%`).Replace(topicKey)
+
 	rows, err := c.db.QueryContext(ctx, `
 		SELECT id, title, type, scope, project, topic_key, content, created_at, updated_at
-		FROM observations WHERE topic_key LIKE ? AND scope=?
+		FROM observations WHERE topic_key LIKE ? ESCAPE '\' AND scope=?
 		ORDER BY created_at DESC
-	`, topicKey+"%", scope)
+	`, escaped+"%", scope)
 	if err != nil {
 		return nil, err
 	}
@@ -458,11 +468,28 @@ func (c *Client) Close() error {
 func sanitizeFTS5Query(query string) string {
 	// Escape double quotes by doubling them (FTS5 standard)
 	result := strings.ReplaceAll(query, `"`, `""`)
-	// Wrap in quotes for phrase search if multiple terms
+
+	// Wrap in quotes for phrase search if multiple terms — this makes all
+	// FTS5 operators (*, -, +, NEAR/, etc.) literal inside the phrase.
 	if strings.Contains(strings.TrimSpace(result), " ") {
 		return `"` + result + `"`
 	}
-	return result
+
+	// For single-term queries: strip `*` that appears mid-word.
+	// Trailing `*` is a valid FTS5 prefix operator (e.g. "test*") and is kept.
+	if strings.Contains(result, "*") {
+		var safe strings.Builder
+		runes := []rune(strings.TrimSpace(result))
+		for i, r := range runes {
+			if r == '*' && i < len(runes)-1 {
+				continue // strip mid-word wildcard
+			}
+			safe.WriteRune(r)
+		}
+		return safe.String()
+	}
+
+	return strings.TrimSpace(result)
 }
 
 // ToJSON serializes observation to JSON
@@ -471,83 +498,3 @@ func (o *Observation) ToJSON() (string, error) {
 	return string(b), err
 }
 
-// SaveLesson guarda una lección aprendida
-func (c *Client) SaveLesson(ctx context.Context, trigger, action, outcome string, ctxMap map[string]interface{}, agents []string, confidence float64) (int64, error) {
-	content := fmt.Sprintf(`**Trigger:** %s
-**Action:** %s
-**Outcome:** %s
-**Context:** %v
-**Agents:** %v
-**Confidence:** %.2f
-**Timestamp:** %s`, trigger, action, outcome, ctxMap, agents, confidence, time.Now().Format(time.RFC3339))
-
-	return c.SaveOrUpdate(ctx, &Observation{
-		Title:    fmt.Sprintf("Lesson: %s → %s", trigger, outcome),
-		Type:     "learning",
-		Scope:    "project",
-		TopicKey: "patterns/" + slug(trigger),
-		Content:  content,
-	})
-}
-
-// SavePattern guarda/actualiza un patrón
-func (c *Client) SavePattern(ctx context.Context, trigger string, pattern *Pattern) error {
-	_, err := c.SaveOrUpdate(ctx, &Observation{
-		Title:    fmt.Sprintf("Pattern: %s", trigger),
-		Type:     "pattern",
-		Scope:    "project",
-		TopicKey: "patterns/" + slug(trigger),
-		Content:  pattern.ToMarkdown(),
-	})
-	return err
-}
-
-// GetPatterns busca patrones
-func (c *Client) GetPatterns(ctx context.Context, trigger string, limit int) ([]SearchResult, error) {
-	return c.SearchWithOptions(ctx, trigger, SearchOptions{
-		Type:    "pattern",
-		Project: "project",
-		Scope:   "project",
-		Limit:   limit,
-	})
-}
-
-// GetLessons busca lecciones
-func (c *Client) GetLessons(ctx context.Context, query string, limit int) ([]SearchResult, error) {
-	return c.SearchWithOptions(ctx, query, SearchOptions{
-		Type:    "learning",
-		Project: "project",
-		Scope:   "project",
-		Limit:   limit,
-	})
-}
-
-func slug(s string) string {
-	// Generate deterministic slug from SHA256 hash (truncated to 16 chars)
-	h := sha256.Sum256([]byte(s))
-	return hex.EncodeToString(h[:])[:16]
-}
-
-// Pattern estructura para patrones aprendidos
-type Pattern struct {
-	ID          string
-	Trigger     string
-	Action      string
-	Outcome     string
-	Frequency   int
-	Confidence  float64
-	LastSeen    time.Time
-	Agents      []string
-	ContextKeys []string
-}
-
-func (p *Pattern) ToMarkdown() string {
-	return fmt.Sprintf(`**Trigger:** %s
-**Action:** %s
-**Outcome:** %s
-**Frequency:** %d
-**Confidence:** %.2f
-**Last Seen:** %s
-**Agents:** %v
-**Context Keys:** %v`, p.Trigger, p.Action, p.Outcome, p.Frequency, p.Confidence, p.LastSeen.Format(time.RFC3339), p.Agents, p.ContextKeys)
-}

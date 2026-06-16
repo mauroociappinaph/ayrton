@@ -218,8 +218,12 @@ var sddVerifyCmd = &cobra.Command{
 	Use:   "verify",
 	Short: "Run tests and verify implementation",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		results := runVerification()
+	issueNum, _ := cmd.Flags().GetInt("issue")
+	results := runVerification()
 
+	if issueNum != 0 {
+		fmt.Fprintf(os.Stderr, "Verifying implementation for issue #%d\n", issueNum)
+	}
 		fmt.Println()
 		fmt.Println("╔══════════════════════════════════════════╗")
 		fmt.Println("║        SDD Verification Report           ║")
@@ -258,28 +262,61 @@ var sddVerifyCmd = &cobra.Command{
 	},
 }
 
+func findProjectRoot() string {
+	dir, _ := os.Getwd()
+	for {
+		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+			return dir
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return ""
+		}
+		dir = parent
+	}
+}
+
 func runVerification() []verifyResult {
 	var results []verifyResult
 
-	results = append(results, runStep("go vet", "go", "vet", "./..."))
-	results = append(results, runStep("go test -race", "go", "test", "-race", "-count=1", "./..."))
-	results = append(results, runStep("go build", "go", "build", "./..."))
+	root := findProjectRoot()
+	argsWithRoot := func(args ...string) []string { return args }
+	if root != "" {
+		argsWithRoot = func(args ...string) []string {
+			resolved := make([]string, len(args))
+			for i, a := range args {
+				if a == "./..." {
+					resolved[i] = filepath.Join(root, "...")
+				} else {
+					resolved[i] = a
+				}
+			}
+			return resolved
+		}
+	}
+
+	results = append(results, runStep("go vet", root, "go", argsWithRoot("vet", "./...")...))
+	results = append(results, runStep("go test -race", root, "go", argsWithRoot("test", "-race", "-count=1", "./...")...))
+	results = append(results, runStep("go build", root, "go", argsWithRoot("build", "./...")...))
 
 	// golangci-lint is optional (not always installed locally)
 	if _, err := exec.LookPath("golangci-lint"); err == nil {
-		results = append(results, runStep("golangci-lint", "golangci-lint", "run", "--timeout=5m"))
+		results = append(results, runStep("golangci-lint", root, "golangci-lint", "run", "--timeout=5m"))
 	}
 
 	return results
 }
 
-func runStep(name string, prog string, args ...string) verifyResult {
+func runStep(name string, root string, prog string, args ...string) verifyResult {
 	start := time.Now()
 	var stdout, stderr bytes.Buffer
 
 	cmd := exec.Command(prog, args...)
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
+	if root != "" {
+		cmd.Dir = root
+	}
 	err := cmd.Run()
 	dur := time.Since(start)
 
