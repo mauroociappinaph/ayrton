@@ -27,6 +27,9 @@ var learnCmd = &cobra.Command{
 		contextStr, _ := cmd.Flags().GetString("context")
 		outcome, _ := cmd.Flags().GetString("outcome")
 		confidence, _ := cmd.Flags().GetFloat64("confidence")
+		if confidence < 0 || confidence > 1 {
+			return fmt.Errorf("confidence must be between 0 and 1, got %.2f", confidence)
+		}
 
 		agent, err := learning.NewAgent("project")
 		if err != nil {

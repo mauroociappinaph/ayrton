@@ -47,7 +47,8 @@ func (a *Agent) Close() error {
 // Learn stores a new pattern or updates existing one
 func (a *Agent) Learn(ctx context.Context, pattern *Pattern) error {
 	// Compute unique key from content fields only (for upsert dedup)
-	contentKey := fmt.Sprintf("%s|%s|%s|%s|%f",
+	// Use \x00 separator so field boundaries don't collide with field content
+	contentKey := fmt.Sprintf("%s\x00%s\x00%s\x00%s\x00%f",
 		pattern.Description, pattern.Category,
 		pattern.Context, pattern.Outcome,
 		pattern.Confidence)
