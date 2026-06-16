@@ -291,6 +291,7 @@ func runStep(name string, prog string, args ...string) verifyResult {
 var sddArchiveCmd = &cobra.Command{
 	Use:   "archive",
 	Short: "Archive completed SDD change",
+	Long:  `Clean up .atl artifacts for an issue and close it on GitHub.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		issueNum, _ := cmd.Flags().GetInt("issue")
 
@@ -298,12 +299,64 @@ var sddArchiveCmd = &cobra.Command{
 			return fmt.Errorf("--issue is required")
 		}
 
-		fmt.Fprintf(os.Stderr, "Archiving SDD change for issue #%d...\n", issueNum)
-		fmt.Fprintf(os.Stderr, "  - Syncing delta specs to main branch\n")
-		fmt.Fprintf(os.Stderr, "  - Cleaning up temporary files\n")
-		fmt.Fprintf(os.Stderr, "  - Updating project documentation\n")
-		fmt.Fprintf(os.Stderr, "\n✅ Archive phase complete (placeholder)\n")
+		atlDir := filepath.Join(".atl")
 
+		type artifact struct {
+			Dir  string
+			Path string
+		}
+		var removed []artifact
+
+		// Collect all .atl files for this issue
+		for _, sub := range []string{"proposals", "specs", "designs", "tasks"} {
+			path := filepath.Join(atlDir, sub, fmt.Sprintf("%d.md", issueNum))
+			if _, err := os.Stat(path); err == nil {
+				removed = append(removed, artifact{Dir: sub, Path: path})
+			}
+		}
+
+		// Remove them
+		for _, a := range removed {
+			if err := os.Remove(a.Path); err != nil {
+				fmt.Fprintf(os.Stderr, "⚠️  failed to remove %s: %v\n", a.Path, err)
+			}
+		}
+
+		fmt.Println()
+		fmt.Println("╔══════════════════════════════════════════╗")
+		fmt.Println("║        SDD Archive Report               ║")
+		fmt.Println("╚══════════════════════════════════════════╝")
+		fmt.Println()
+
+		if len(removed) > 0 {
+			fmt.Printf("Cleaned up %d artifact(s) for issue #%d:\n", len(removed), issueNum)
+			for _, a := range removed {
+				fmt.Printf("  🗑️  .atl/%-12s %d.md\n", a.Dir+"/", issueNum)
+			}
+		} else {
+			fmt.Printf("No .atl artifacts found for issue #%d\n", issueNum)
+		}
+		fmt.Println()
+
+		// Close issue on GitHub
+		if _, err := exec.LookPath("gh"); err == nil {
+			fmt.Printf("Closing issue #%d on GitHub...\n", issueNum)
+			cmd := exec.Command("gh", "issue", "close", fmt.Sprintf("%d", issueNum), "--comment", "Archived via `ayrton sdd archive`")
+			var stderr bytes.Buffer
+			cmd.Stderr = &stderr
+			if err := cmd.Run(); err != nil {
+				fmt.Fprintf(os.Stderr, "⚠️  gh issue close failed: %s\n", strings.TrimSpace(stderr.String()))
+			} else {
+				fmt.Printf("✅ Issue #%d closed on GitHub\n", issueNum)
+			}
+		} else {
+			fmt.Fprintf(os.Stderr, "⚠️  gh CLI not found — skipping GitHub issue close\n")
+			fmt.Fprintf(os.Stderr, "   Install: https://cli.github.com/\n")
+		}
+
+		fmt.Println()
+		fmt.Println(strings.Repeat("─", 46))
+		fmt.Println("✅ Archive complete")
 		return nil
 	},
 }
