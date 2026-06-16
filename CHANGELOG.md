@@ -1,3 +1,5 @@
+- feat: add MCP stdio server with mem_save/mem_search/mem_context tools (mcp-go v0.55.0)
+- docs: add MCP server section and ayrton mcp command to README
 - fix: resolve Judgment Day CRITICALs and WARNINGs; add integration tests (94306cc)
 - feat: add docs generation + Notion sync to SDD workflow (8e424ab)
 - ci: remove cmd/chat.go (broken import) (1fc621a)

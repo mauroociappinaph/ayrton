@@ -33,6 +33,7 @@ cd ayrton && go build -o ayrton .
 
 | Command | Description |
 |---------|-------------|
+| `ayrton mcp` | MCP stdio server — expone memoria persistente para agentes de IA |
 | `ayrton sdd propose/spec/design/tasks/apply/verify/archive` | Spec-Driven Development workflow |
 | `ayrton learn add/recall/recent` | Learning Agent with persistent memory |
 | `ayrton version` | Show version info |
@@ -58,6 +59,41 @@ The Learning Agent stores:
 - **Context** — why it mattered, what files involved
 - **Outcome** — what happened when you applied it
 - **Confidence** — how sure you are (0.0–1.0)
+
+---
+
+## MCP Server — Memory for Any AI Agent
+
+`ayrton mcp` expone la memoria persistente como un servidor **MCP (Model Context Protocol)** sobre stdio. Cualquier agente o cliente que hable MCP (Claude Code, Cline, MCP Inspector, etc.) puede conectarse y usar las herramientas directamente.
+
+```bash
+ayrton mcp
+```
+
+### Herramientas expuestas
+
+| Tool | Description |
+|------|-------------|
+| `mem_save` | Guarda observaciones en memoria persistente (upsert via `topic_key`) |
+| `mem_search` | Busca por texto completo (FTS5) con filtros |
+| `mem_context` | Lista observaciones recientes para contexto de sesión |
+
+### Configuración con Claude Code
+
+Agrega esto a `~/.claude/settings.json`:
+
+```json
+{
+  "mcpServers": {
+    "ayrton-memory": {
+      "command": "/ruta/a/ayrton",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+En la próxima sesión de Claude Code, `mem_save`, `mem_search` y `mem_context` estarán disponibles como herramientas nativas.
 
 ---
 

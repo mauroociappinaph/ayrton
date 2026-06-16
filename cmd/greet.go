@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
 
 	"github.com/spf13/cobra"
@@ -18,10 +19,17 @@ var greetCmd = &cobra.Command{
 			name = args[0]
 		}
 
-		greeting := fmt.Sprintf("¡Hola, %s! 👋", name)
+		lang := viper.GetString("lang")
+		var greeting string
+		switch lang {
+		case "en":
+			greeting = fmt.Sprintf("Hello, %s! 👋", name)
+		default:
+			greeting = fmt.Sprintf("¡Hola, %s! 👋", name)
+		}
 
 		if viper.GetString("output") == "json" {
-			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "{\"greeting\": \"%s\"}\n", greeting)
+			_ = json.NewEncoder(cmd.OutOrStdout()).Encode(map[string]string{"greeting": greeting})
 		} else {
 			cmd.Println(greeting)
 		}

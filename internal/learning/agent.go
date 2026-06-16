@@ -2,9 +2,10 @@ package learning
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"testing"
 	"time"
 
 	"github.com/mauroociappinaph/ayrton/internal/engram"
@@ -38,16 +39,6 @@ func NewAgent(scope string) (*Agent, error) {
 	return &Agent{client: client, scope: scope}, nil
 }
 
-// NewTestAgent creates a new Learning Agent with a temporary database for testing
-func NewTestAgent(t testing.TB, scope string) (*Agent, error) {
-	t.Helper()
-	client, err := engram.NewTestClient(t)
-	if err != nil {
-		return nil, fmt.Errorf("create engram client: %w", err)
-	}
-	return &Agent{client: client, scope: scope}, nil
-}
-
 // Close closes the agent
 func (a *Agent) Close() error {
 	return a.client.Close()
@@ -55,22 +46,36 @@ func (a *Agent) Close() error {
 
 // Learn stores a new pattern or updates existing one
 func (a *Agent) Learn(ctx context.Context, pattern *Pattern) error {
-	if pattern.ID == "" {
-		pattern.ID = fmt.Sprintf("pattern-%d", time.Now().UnixNano())
+	// Compute unique key from content fields only (for upsert dedup)
+	contentKey := fmt.Sprintf("%s|%s|%s|%s|%f",
+		pattern.Description, pattern.Category,
+		pattern.Context, pattern.Outcome,
+		pattern.Confidence)
+	hash := sha256.Sum256([]byte(contentKey))
+	patternID := hex.EncodeToString(hash[:8])
+
+	// Hash-based deterministic ID
+	pattern.ID = patternID
+
+	// Now set timestamps
+	now := time.Now()
+	if pattern.CreatedAt.IsZero() {
+		pattern.CreatedAt = now
 	}
-	pattern.CreatedAt = time.Now()
-	pattern.UpdatedAt = time.Now()
+	pattern.UpdatedAt = now
 
 	contentBytes, err := json.Marshal(pattern)
 	if err != nil {
 		return fmt.Errorf("marshal pattern: %w", err)
 	}
 
+	topicKey := fmt.Sprintf("learning/patterns/%s/%s/%s", pattern.Category, a.scope, patternID)
+
 	obs := &engram.Observation{
 		Title:    fmt.Sprintf("Pattern: %s", pattern.Description),
 		Type:     "learning-pattern",
 		Scope:    a.scope,
-		TopicKey: fmt.Sprintf("learning/patterns/%s", pattern.Category),
+		TopicKey: topicKey,
 		Content:  string(contentBytes),
 	}
 

@@ -1,4 +1,4 @@
-# Makefile para mi-cli
+# Makefile para ayrton
 # Uso: make <target>
 # Ejemplos: make build, make test, make lint, make release
 
@@ -73,8 +73,8 @@ ship: check ## 🚀 Pipeline completo: validate → tag → push → release
 	@VERSION=$$(make -s version); \
 	echo "📦 Version: $$VERSION"; \
 	git tag $$VERSION; \
-	git push origin main; \
 	git push origin $$VERSION; \
+	git push origin main; \
 	echo "✅ Shipped $$VERSION"
 
 ship-dry: check ## 🧪 Dry-run: muestra qué haria ship sin ejecutar
@@ -87,16 +87,16 @@ ship-minor: check ## Ship con version minor bump
 	@VERSION=$$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' | awk -F. '{print "v" $$1 "." $$2+1 ".0"}'); \
 	echo "📦 Version: $$VERSION"; \
 	git tag $$VERSION; \
-	git push origin main; \
 	git push origin $$VERSION; \
+	git push origin main; \
 	echo "✅ Shipped $$VERSION"
 
 ship-major: check ## Ship con version major bump
 	@VERSION=$$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' | awk -F. '{print "v" $$1+1 ".0.0"}'); \
 	echo "📦 Version: $$VERSION"; \
 	git tag $$VERSION; \
-	git push origin main; \
 	git push origin $$VERSION; \
+	git push origin main; \
 	echo "✅ Shipped $$VERSION"
 
 check: fmt vet lint test-short ## Pipeline completo de validación local

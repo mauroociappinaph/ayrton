@@ -1,6 +1,6 @@
 # Binarios
-mi-cli
-mi-cli.exe
+ayrton
+ayrton.exe
 dist/
 
 # Coverage
@@ -30,6 +30,6 @@ Thumbs.db
 
 # Testing
 *.test
-*.profayrton
+*.prof
 ayrton
 auton-test

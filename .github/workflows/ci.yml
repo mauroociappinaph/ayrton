@@ -7,10 +7,6 @@ on:
   pull_request:
     branches: [main, master]
 
-# Opt into Node.js 24 early (Node 20 deprecated Jun 16, 2026)
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
-
 jobs:
   test:
     name: Test (Go ${{ matrix.go-version }}, ${{ matrix.os }})

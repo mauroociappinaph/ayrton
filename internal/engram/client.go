@@ -10,7 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"testing"
+	"sync"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -18,6 +18,7 @@ import (
 
 // Client provides access to Engram memory store
 type Client struct {
+	mu     sync.RWMutex
 	db     *sql.DB
 	dbPath string
 }
@@ -28,6 +29,7 @@ type Observation struct {
 	Title       string    `json:"title"`
 	Type        string    `json:"type"`
 	Scope       string    `json:"scope"`
+	Project     string    `json:"project,omitempty"`
 	TopicKey    string    `json:"topic_key,omitempty"`
 	Content     string    `json:"content"`
 	CreatedAt   time.Time `json:"created_at"`
@@ -56,6 +58,12 @@ func NewClient() (*Client, error) {
 	}
 
 	dbPath := filepath.Join(home, ".ayrton", "engram.db")
+	return NewClientWithPath(dbPath)
+}
+
+// NewClientWithPath creates a new Engram client at the given database path.
+// Useful for testing with temporary directories.
+func NewClientWithPath(dbPath string) (*Client, error) {
 	if err := os.MkdirAll(filepath.Dir(dbPath), 0755); err != nil {
 		return nil, fmt.Errorf("create db dir: %w", err)
 	}
@@ -73,35 +81,6 @@ func NewClient() (*Client, error) {
 	return c, nil
 }
 
-// NewTestClient creates a new Engram client with a temporary database for testing
-func NewTestClient(t testing.TB) (*Client, error) {
-	t.Helper()
-	tmpDir := t.TempDir()
-	dbPath := filepath.Join(tmpDir, "test.db")
-	return newTestClientWithPath(t, dbPath)
-}
-
-// NewTestClientWithPath creates a new Engram client with a specific database path for testing
-func NewTestClientWithPath(t testing.TB, dbPath string) (*Client, error) {
-	t.Helper()
-	return newTestClientWithPath(t, dbPath)
-}
-
-func newTestClientWithPath(t testing.TB, dbPath string) (*Client, error) {
-	db, err := sql.Open("sqlite", dbPath+"?_pragma=journal_mode(WAL)&_pragma=foreign_keys(ON)")
-	if err != nil {
-		return nil, fmt.Errorf("open db: %w", err)
-	}
-
-	c := &Client{db: db, dbPath: dbPath}
-	if err := c.initSchema(); err != nil {
-		return nil, fmt.Errorf("init schema: %w", err)
-	}
-
-	t.Cleanup(func() { _ = c.Close() })
-	return c, nil
-}
-
 // initSchema initializes the database schema with FTS5
 func (c *Client) initSchema() error {
 	schema := `
@@ -110,6 +89,7 @@ func (c *Client) initSchema() error {
 		title TEXT NOT NULL,
 		type TEXT NOT NULL,
 		scope TEXT NOT NULL DEFAULT 'project',
+		project TEXT NOT NULL DEFAULT '',
 		topic_key TEXT,
 		content TEXT NOT NULL,
 		created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -120,18 +100,19 @@ func (c *Client) initSchema() error {
 	CREATE INDEX IF NOT EXISTS idx_observations_topic ON observations(topic_key);
 	CREATE INDEX IF NOT EXISTS idx_observations_type ON observations(type);
 	CREATE INDEX IF NOT EXISTS idx_observations_scope ON observations(scope);
+	CREATE INDEX IF NOT EXISTS idx_observations_project ON observations(project);
 	CREATE INDEX IF NOT EXISTS idx_observations_created ON observations(created_at);
 
 	-- FTS5 virtual table for full-text search
 	CREATE VIRTUAL TABLE IF NOT EXISTS observations_fts USING fts5(
-		title, content, type, scope, topic_key,
+		title, content, type, scope, project, topic_key,
 		content='observations', content_rowid='id'
 	);
 
 	-- Triggers to keep FTS in sync
 	CREATE TRIGGER IF NOT EXISTS observations_ai AFTER INSERT ON observations BEGIN
-		INSERT INTO observations_fts(rowid, title, content, type, scope, topic_key)
-		VALUES (new.id, new.title, new.content, new.type, new.scope, new.topic_key);
+		INSERT INTO observations_fts(rowid, title, content, type, scope, project, topic_key)
+		VALUES (new.id, new.title, new.content, new.type, new.scope, new.project, new.topic_key);
 	END;
 
 	CREATE TRIGGER IF NOT EXISTS observations_ad AFTER DELETE ON observations BEGIN
@@ -139,10 +120,10 @@ func (c *Client) initSchema() error {
 	END;
 
 	CREATE TRIGGER IF NOT EXISTS observations_au AFTER UPDATE ON observations BEGIN
-		INSERT INTO observations_fts(observations_fts, rowid, title, content, type, scope, topic_key)
-		VALUES ('delete', old.id, old.title, old.content, old.type, old.scope, old.topic_key);
-		INSERT INTO observations_fts(rowid, title, content, type, scope, topic_key)
-		VALUES (new.id, new.title, new.content, new.type, new.scope, new.topic_key);
+		INSERT INTO observations_fts(observations_fts, rowid, title, content, type, scope, project, topic_key)
+		VALUES ('delete', old.id, old.title, old.content, old.type, old.scope, old.project, old.topic_key);
+		INSERT INTO observations_fts(rowid, title, content, type, scope, project, topic_key)
+		VALUES (new.id, new.title, new.content, new.type, new.scope, new.project, new.topic_key);
 	END;
 	`
 
@@ -152,6 +133,14 @@ func (c *Client) initSchema() error {
 
 // Save saves an observation
 func (c *Client) Save(ctx context.Context, obs *Observation) (int64, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.saveLocked(ctx, obs)
+}
+
+// saveLocked saves an observation while already holding c.mu.Lock.
+// Extracted to avoid deadlock when called from SaveOrUpdate.
+func (c *Client) saveLocked(ctx context.Context, obs *Observation) (int64, error) {
 	now := time.Now()
 	obs.CreatedAt = now
 	obs.UpdatedAt = now
@@ -160,9 +149,9 @@ func (c *Client) Save(ctx context.Context, obs *Observation) (int64, error) {
 	topicKey := nullIfEmpty(obs.TopicKey)
 
 	result, err := c.db.ExecContext(ctx, `
-		INSERT INTO observations (title, type, scope, topic_key, content, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?)
-	`, obs.Title, obs.Type, obs.Scope, topicKey, obs.Content, obs.CreatedAt, obs.UpdatedAt)
+		INSERT INTO observations (title, type, scope, project, topic_key, content, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+	`, obs.Title, obs.Type, obs.Scope, obs.Project, topicKey, obs.Content, obs.CreatedAt, obs.UpdatedAt)
 	if err != nil {
 		return 0, err
 	}
@@ -177,32 +166,39 @@ func (c *Client) Save(ctx context.Context, obs *Observation) (int64, error) {
 
 // Update updates an existing observation
 func (c *Client) Update(ctx context.Context, obs *Observation) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
 	obs.UpdatedAt = time.Now()
 	_, err := c.db.ExecContext(ctx, `
-		UPDATE observations SET title=?, type=?, scope=?, topic_key=?, content=?, updated_at=?
+		UPDATE observations SET title=?, type=?, scope=?, project=?, topic_key=?, content=?, updated_at=?
 		WHERE id=?
-	`, obs.Title, obs.Type, obs.Scope, nullIfEmpty(obs.TopicKey), obs.Content, obs.UpdatedAt, obs.ID)
+	`, obs.Title, obs.Type, obs.Scope, obs.Project, nullIfEmpty(obs.TopicKey), obs.Content, obs.UpdatedAt, obs.ID)
 	return err
 }
 
 // SaveOrUpdate saves or updates an observation by topic_key (upsert) - atomic
 func (c *Client) SaveOrUpdate(ctx context.Context, obs *Observation) (int64, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
 	if obs.TopicKey == "" {
-		return c.Save(ctx, obs)
+		return c.saveLocked(ctx, obs)
 	}
 
 	now := time.Now()
 	obs.UpdatedAt = now
 
 	result, err := c.db.ExecContext(ctx, `
-		INSERT INTO observations (title, type, scope, topic_key, content, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO observations (title, type, scope, project, topic_key, content, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(topic_key, scope) DO UPDATE SET
 			title=excluded.title,
 			type=excluded.type,
+			project=excluded.project,
 			content=excluded.content,
 			updated_at=excluded.updated_at
-	`, obs.Title, obs.Type, obs.Scope, obs.TopicKey, obs.Content, now, now)
+	`, obs.Title, obs.Type, obs.Scope, obs.Project, obs.TopicKey, obs.Content, now, now)
 	if err != nil {
 		return 0, err
 	}
@@ -234,12 +230,15 @@ func nullIfEmpty(s string) any {
 
 // Get retrieves an observation by ID
 func (c *Client) Get(ctx context.Context, id int64) (*Observation, error) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
 	obs := &Observation{}
 	var topicKey sql.NullString
 	err := c.db.QueryRowContext(ctx, `
-		SELECT id, title, type, scope, topic_key, content, created_at, updated_at
+		SELECT id, title, type, scope, project, topic_key, content, created_at, updated_at
 		FROM observations WHERE id=?
-	`, id).Scan(&obs.ID, &obs.Title, &obs.Type, &obs.Scope, &topicKey, &obs.Content, &obs.CreatedAt, &obs.UpdatedAt)
+	`, id).Scan(&obs.ID, &obs.Title, &obs.Type, &obs.Scope, &obs.Project, &topicKey, &obs.Content, &obs.CreatedAt, &obs.UpdatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -256,6 +255,9 @@ func (c *Client) Search(ctx context.Context, query string, limit int) ([]SearchR
 
 // SearchWithOptions performs full-text search with options
 func (c *Client) SearchWithOptions(ctx context.Context, query string, opts SearchOptions) ([]SearchResult, error) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
 	// Sanitize query for FTS5 - escape special characters
 	query = sanitizeFTS5Query(query)
 
@@ -277,10 +279,15 @@ func (c *Client) SearchWithOptions(ctx context.Context, query string, opts Searc
 		args = append(args, opts.Scope)
 	}
 
+	if opts.Project != "" {
+		whereClause += " AND o.project = ?"
+		args = append(args, opts.Project)
+	}
+
 	args = append(args, limit)
 
 	rows, err := c.db.QueryContext(ctx, fmt.Sprintf(`
-		SELECT o.id, o.title, o.type, o.scope, o.topic_key, o.content, o.created_at, o.updated_at,
+		SELECT o.id, o.title, o.type, o.scope, o.project, o.topic_key, o.content, o.created_at, o.updated_at,
 		       bm25(observations_fts) as rank
 		FROM observations_fts
 		JOIN observations o ON o.id = observations_fts.rowid
@@ -297,7 +304,7 @@ func (c *Client) SearchWithOptions(ctx context.Context, query string, opts Searc
 	for rows.Next() {
 		var r SearchResult
 		var topicKeyNull sql.NullString
-		err := rows.Scan(&r.ID, &r.Title, &r.Type, &r.Scope, &topicKeyNull, &r.Content, &r.CreatedAt, &r.UpdatedAt, &r.Rank)
+		err := rows.Scan(&r.ID, &r.Title, &r.Type, &r.Scope, &r.Project, &topicKeyNull, &r.Content, &r.CreatedAt, &r.UpdatedAt, &r.Rank)
 		if err != nil {
 			return nil, err
 		}
@@ -311,11 +318,14 @@ func (c *Client) SearchWithOptions(ctx context.Context, query string, opts Searc
 
 // ListByTopic retrieves observations by topic_key
 func (c *Client) ListByTopic(ctx context.Context, topicKey, scope string) ([]Observation, error) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
 	rows, err := c.db.QueryContext(ctx, `
-		SELECT id, title, type, scope, topic_key, content, created_at, updated_at
-		FROM observations WHERE topic_key=? AND scope=?
+		SELECT id, title, type, scope, project, topic_key, content, created_at, updated_at
+		FROM observations WHERE topic_key LIKE ? AND scope=?
 		ORDER BY created_at DESC
-	`, topicKey, scope)
+	`, topicKey+"%", scope)
 	if err != nil {
 		return nil, err
 	}
@@ -325,7 +335,7 @@ func (c *Client) ListByTopic(ctx context.Context, topicKey, scope string) ([]Obs
 	for rows.Next() {
 		var o Observation
 		var topicKeyNull sql.NullString
-		err := rows.Scan(&o.ID, &o.Title, &o.Type, &o.Scope, &topicKeyNull, &o.Content, &o.CreatedAt, &o.UpdatedAt)
+		err := rows.Scan(&o.ID, &o.Title, &o.Type, &o.Scope, &o.Project, &topicKeyNull, &o.Content, &o.CreatedAt, &o.UpdatedAt)
 		if err != nil {
 			return nil, err
 		}
@@ -339,8 +349,11 @@ func (c *Client) ListByTopic(ctx context.Context, topicKey, scope string) ([]Obs
 
 // ListRecent retrieves recent observations
 func (c *Client) ListRecent(ctx context.Context, scope string, limit int) ([]Observation, error) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
 	rows, err := c.db.QueryContext(ctx, `
-		SELECT id, title, type, scope, topic_key, content, created_at, updated_at
+		SELECT id, title, type, scope, project, topic_key, content, created_at, updated_at
 		FROM observations WHERE scope=?
 		ORDER BY created_at DESC
 		LIMIT ?
@@ -354,7 +367,7 @@ func (c *Client) ListRecent(ctx context.Context, scope string, limit int) ([]Obs
 	for rows.Next() {
 		var o Observation
 		var topicKeyNull sql.NullString
-		err := rows.Scan(&o.ID, &o.Title, &o.Type, &o.Scope, &topicKeyNull, &o.Content, &o.CreatedAt, &o.UpdatedAt)
+		err := rows.Scan(&o.ID, &o.Title, &o.Type, &o.Scope, &o.Project, &topicKeyNull, &o.Content, &o.CreatedAt, &o.UpdatedAt)
 		if err != nil {
 			return nil, err
 		}
@@ -368,6 +381,9 @@ func (c *Client) ListRecent(ctx context.Context, scope string, limit int) ([]Obs
 
 // Close closes the database connection
 func (c *Client) Close() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
 	return c.db.Close()
 }
 

@@ -55,7 +55,7 @@ Create a GitHub issue with label `autonomous` → full SDD loop executes automat
 
 ## 🏗️ Architecture
 
-- **Core**: Go 1.23 + Cobra + Viper
+- **Core**: Go 1.25 + Cobra + Viper
 - **Memory**: Engram (SQLite + FTS5) at `~/.ayrton/engram.db`
 - **Agents**: 12 agents defined (SDD phases + Learning + Auditor + Revenue + Orchestrator)
 - **CI/CD**: GitHub Actions with SDD Autonomous Loop

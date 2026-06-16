@@ -2,6 +2,7 @@ package learning
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
 	"testing"
 	"time"
@@ -9,8 +10,19 @@ import (
 	"github.com/mauroociappinaph/ayrton/internal/engram"
 )
 
+func newTestAgent(t testing.TB, scope string) (*Agent, error) {
+	t.Helper()
+	dbPath := filepath.Join(t.TempDir(), "engram.db")
+	client, err := engram.NewClientWithPath(dbPath)
+	if err != nil {
+		return nil, fmt.Errorf("create engram client: %w", err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+	return &Agent{client: client, scope: scope}, nil
+}
+
 func TestAgent_LearnAndRecall(t *testing.T) {
-	agent, err := NewTestAgent(t, "test")
+	agent, err := newTestAgent(t, "test")
 	if err != nil {
 		t.Fatalf("create agent: %v", err)
 	}
@@ -43,7 +55,7 @@ func TestAgent_LearnAndRecall(t *testing.T) {
 }
 
 func TestAgent_RecallByCategory(t *testing.T) {
-	agent, err := NewTestAgent(t, "test")
+	agent, err := newTestAgent(t, "test")
 	if err != nil {
 		t.Fatalf("create agent: %v", err)
 	}
@@ -73,7 +85,7 @@ func TestAgent_RecallByCategory(t *testing.T) {
 }
 
 func TestAgent_GetRecentPatterns(t *testing.T) {
-	agent, err := NewTestAgent(t, "test")
+	agent, err := newTestAgent(t, "test")
 	if err != nil {
 		t.Fatalf("create agent: %v", err)
 	}
@@ -102,7 +114,7 @@ func TestAgent_GetRecentPatterns(t *testing.T) {
 }
 
 func TestAgent_LearnFromSDD(t *testing.T) {
-	agent, err := NewTestAgent(t, "test")
+	agent, err := newTestAgent(t, "test")
 	if err != nil {
 		t.Fatalf("create agent: %v", err)
 	}
@@ -126,7 +138,7 @@ func TestAgent_LearnFromSDD(t *testing.T) {
 }
 
 func TestAgent_LearnFromError(t *testing.T) {
-	agent, err := NewTestAgent(t, "test")
+	agent, err := newTestAgent(t, "test")
 	if err != nil {
 		t.Fatalf("create agent: %v", err)
 	}
@@ -154,10 +166,11 @@ func TestPattern_Persistence(t *testing.T) {
 	tmpDir := t.TempDir()
 	dbPath := filepath.Join(tmpDir, "test.db")
 
-	client1, err := engram.NewTestClientWithPath(t, dbPath)
+	client1, err := engram.NewClientWithPath(dbPath)
 	if err != nil {
 		t.Fatalf("create client1: %v", err)
 	}
+	t.Cleanup(func() { _ = client1.Close() })
 	agent1 := &Agent{client: client1, scope: "persistence-test"}
 
 	ctx := context.Background()
@@ -171,10 +184,11 @@ func TestPattern_Persistence(t *testing.T) {
 		t.Fatalf("learn: %v", err)
 	}
 
-	client2, err := engram.NewTestClientWithPath(t, dbPath)
+	client2, err := engram.NewClientWithPath(dbPath)
 	if err != nil {
 		t.Fatalf("create client2: %v", err)
 	}
+	t.Cleanup(func() { _ = client2.Close() })
 	agent2 := &Agent{client: client2, scope: "persistence-test"}
 
 	patterns, err := agent2.Recall(ctx, "persistent", 10)
@@ -190,7 +204,7 @@ func TestPattern_Persistence(t *testing.T) {
 }
 
 func TestAgent_ConcurrentAccess(t *testing.T) {
-	agent, err := NewTestAgent(t, "concurrent")
+	agent, err := newTestAgent(t, "concurrent")
 	if err != nil {
 		t.Fatalf("create agent: %v", err)
 	}
@@ -226,7 +240,7 @@ func TestAgent_ConcurrentAccess(t *testing.T) {
 }
 
 func TestAgent_Close(t *testing.T) {
-	agent, err := NewTestAgent(t, "close-test")
+	agent, err := newTestAgent(t, "close-test")
 	if err != nil {
 		t.Fatalf("create agent: %v", err)
 	}
