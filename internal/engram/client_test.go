@@ -24,7 +24,7 @@ func TestClient_SaveAndGet(t *testing.T) {
 	if err := client.initSchema(); err != nil {
 		t.Fatalf("init schema: %v", err)
 	}
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	ctx := context.Background()
 
@@ -74,7 +74,7 @@ func TestClient_Search(t *testing.T) {
 	if err := client.initSchema(); err != nil {
 		t.Fatalf("init schema: %v", err)
 	}
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	ctx := context.Background()
 
@@ -123,7 +123,7 @@ func TestClient_SaveOrUpdate_Upsert(t *testing.T) {
 	if err := client.initSchema(); err != nil {
 		t.Fatalf("init schema: %v", err)
 	}
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	ctx := context.Background()
 
@@ -184,7 +184,7 @@ func TestClient_ListByTopic(t *testing.T) {
 	if err := client.initSchema(); err != nil {
 		t.Fatalf("init schema: %v", err)
 	}
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	ctx := context.Background()
 
@@ -234,7 +234,7 @@ func TestClient_ListRecent(t *testing.T) {
 	if err := client.initSchema(); err != nil {
 		t.Fatalf("init schema: %v", err)
 	}
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	ctx := context.Background()
 

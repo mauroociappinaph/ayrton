@@ -32,7 +32,7 @@ var learnCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("create agent: %w", err)
 		}
-		defer agent.Close()
+		defer func() { _ = agent.Close() }()
 
 		pattern := &learning.Pattern{
 			Description: description,
@@ -66,7 +66,7 @@ var recallCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("create agent: %w", err)
 		}
-		defer agent.Close()
+		defer func() { _ = agent.Close() }()
 
 		ctx := context.Background()
 		var patterns []learning.Pattern
@@ -112,7 +112,7 @@ var recentCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("create agent: %w", err)
 		}
-		defer agent.Close()
+		defer func() { _ = agent.Close() }()
 
 		ctx := context.Background()
 		patterns, err := agent.GetRecentPatterns(ctx, limit)

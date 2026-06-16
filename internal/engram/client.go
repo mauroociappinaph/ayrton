@@ -98,7 +98,7 @@ func newTestClientWithPath(t testing.TB, dbPath string) (*Client, error) {
 		return nil, fmt.Errorf("init schema: %w", err)
 	}
 
-	t.Cleanup(func() { c.Close() })
+	t.Cleanup(func() { _ = c.Close() })
 	return c, nil
 }
 
@@ -291,7 +291,7 @@ func (c *Client) SearchWithOptions(ctx context.Context, query string, opts Searc
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var results []SearchResult
 	for rows.Next() {
@@ -319,7 +319,7 @@ func (c *Client) ListByTopic(ctx context.Context, topicKey, scope string) ([]Obs
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var results []Observation
 	for rows.Next() {
@@ -348,7 +348,7 @@ func (c *Client) ListRecent(ctx context.Context, scope string, limit int) ([]Obs
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var results []Observation
 	for rows.Next() {
