@@ -2,7 +2,7 @@
 # Uso: make <target>
 # Ejemplos: make build, make test, make lint, make release
 
-.PHONY: help build test lint fmt vet tidy install clean release snapshot
+.PHONY: help build test lint fmt vet tidy install clean release snapshot check ship
 
 # Variables
 BINARY_NAME := ayrton
@@ -63,6 +63,35 @@ snapshot: ## Build snapshot con goreleaser (sin publicar)
 release: ## Release completo con goreleaser (requiere tag)
 	@echo "🚀 Releasing..."
 	@goreleaser release --clean
+
+# Release automation
+version: ## Muestra próxima versión (patch bump)
+	@git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' | awk -F. '{print "v" $$1 "." $$2 "." $$3+1}' || echo "v0.1.0"
+
+ship: check ## 🚀 Pipeline completo: validate → commit → push → tag → release
+	@echo "🚀 Shipping..."
+	@VERSION=$$(make -s version); \
+	echo "📦 Version: $$VERSION"; \
+	git tag $$VERSION; \
+	git push origin main; \
+	git push origin $$VERSION; \
+	echo "✅ Shipped $$VERSION"
+
+ship-minor: check ## Ship con version minor bump
+	@VERSION=$$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' | awk -F. '{print "v" $$1 "." $$2+1 ".0"}'); \
+	echo "📦 Version: $$VERSION"; \
+	git tag $$VERSION; \
+	git push origin main; \
+	git push origin $$VERSION; \
+	echo "✅ Shipped $$VERSION"
+
+ship-major: check ## Ship con version major bump
+	@VERSION=$$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' | awk -F. '{print "v" $$1+1 ".0.0"}'); \
+	echo "📦 Version: $$VERSION"; \
+	git tag $$VERSION; \
+	git push origin main; \
+	git push origin $$VERSION; \
+	echo "✅ Shipped $$VERSION"
 
 check: fmt vet lint test-short ## Pipeline completo de validación local
 
