@@ -57,6 +57,18 @@ func (a *Agent) Learn(ctx context.Context, pattern *Pattern) error {
 	// Hash-based deterministic ID
 	pattern.ID = patternID
 
+	// Increment UsageCount if this pattern already exists
+	topicKey := fmt.Sprintf("learning/patterns/%s/%s/%s", pattern.Category, a.scope, patternID)
+	existing, err := a.client.ListByTopic(ctx, topicKey, a.scope)
+	if err == nil {
+		for _, e := range existing {
+			if p := a.parsePattern(e.Content); p != nil {
+				pattern.UsageCount = p.UsageCount + 1
+				break
+			}
+		}
+	}
+
 	// Now set timestamps
 	now := time.Now()
 	if pattern.CreatedAt.IsZero() {
@@ -68,8 +80,6 @@ func (a *Agent) Learn(ctx context.Context, pattern *Pattern) error {
 	if err != nil {
 		return fmt.Errorf("marshal pattern: %w", err)
 	}
-
-	topicKey := fmt.Sprintf("learning/patterns/%s/%s/%s", pattern.Category, a.scope, patternID)
 
 	obs := &engram.Observation{
 		Title:    fmt.Sprintf("Pattern: %s", pattern.Description),
@@ -124,7 +134,15 @@ func (a *Agent) RecallByCategory(ctx context.Context, category string, limit int
 
 // GetRecentPatterns retrieves recently learned patterns
 func (a *Agent) GetRecentPatterns(ctx context.Context, limit int) ([]Pattern, error) {
-	results, err := a.client.ListRecent(ctx, a.scope, limit)
+	// Over-fetch generously since ListRecent queries all types and we filter
+	// by "learning-pattern" type in Go. Without over-fetch, we could return
+	// fewer results than requested if non-pattern observations push out real
+	// patterns from the SQL LIMIT window.
+	fetchLimit := limit * 10
+	if fetchLimit < 100 {
+		fetchLimit = 100
+	}
+	results, err := a.client.ListRecent(ctx, a.scope, fetchLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -138,6 +156,9 @@ func (a *Agent) GetRecentPatterns(ctx context.Context, limit int) ([]Pattern, er
 		if p != nil {
 			p.ID = fmt.Sprintf("pattern-%d", r.ID)
 			patterns = append(patterns, *p)
+			if len(patterns) >= limit {
+				break
+			}
 		}
 	}
 	return patterns, nil
