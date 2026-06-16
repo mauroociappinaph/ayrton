@@ -58,6 +58,12 @@ func NewClient() (*Client, error) {
 	}
 
 	dbPath := filepath.Join(home, ".ayrton", "engram.db")
+	return NewClientWithPath(dbPath)
+}
+
+// NewClientWithPath creates a new Engram client at the given database path.
+// Useful for testing with temporary directories.
+func NewClientWithPath(dbPath string) (*Client, error) {
 	if err := os.MkdirAll(filepath.Dir(dbPath), 0755); err != nil {
 		return nil, fmt.Errorf("create db dir: %w", err)
 	}
@@ -312,9 +318,9 @@ func (c *Client) ListByTopic(ctx context.Context, topicKey, scope string) ([]Obs
 
 	rows, err := c.db.QueryContext(ctx, `
 		SELECT id, title, type, scope, project, topic_key, content, created_at, updated_at
-		FROM observations WHERE topic_key=? AND scope=?
+		FROM observations WHERE topic_key LIKE ? AND scope=?
 		ORDER BY created_at DESC
-	`, topicKey, scope)
+	`, topicKey+"%", scope)
 	if err != nil {
 		return nil, err
 	}

@@ -102,7 +102,7 @@ func TestGreetCmd_JSONOutput(t *testing.T) {
 	require.NoError(t, err)
 
 	output := strings.TrimSpace(buf.String())
-	assert.Contains(t, output, `{"greeting": "¡Hola, Test! 👋"}`)
+	assert.Contains(t, output, `{"greeting":"¡Hola, Test! 👋"}`)
 	assert.True(t, strings.HasSuffix(output, "}"))
 	assert.JSONEq(t, `{"greeting": "¡Hola, Test! 👋"}`, output)
 }
