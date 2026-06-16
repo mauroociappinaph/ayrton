@@ -85,30 +85,30 @@ release:
 #       owner: mauroociappinaph
 #       name: homebrew-tap
 #     folder: Formula
-#     homepage: "https://github.com/mauroociappinaph/mi-cli"
-#     description: "Un CLI moderno y rápido construido con Go + Cobra"
+#     homepage: "https://github.com/mauroociappinaph/ayrton"
+#     description: "Ayrton CLI — AI learning agent and SDD orchestrator"
 #     license: "MIT"
 
 # scoops:
 #   - repository:
 #       owner: mauroociappinaph
 #       name: scoop-bucket
-#     homepage: "https://github.com/mauroociappinaph/mi-cli"
-#     description: "Un CLI moderno y rápido construido con Go + Cobra"
+#     homepage: "https://github.com/mauroociappinaph/ayrton"
+#     description: "Ayrton CLI — AI learning agent and SDD orchestrator"
 #     license: "MIT"
 
 # winget:
 #   - repository:
 #       owner: mauroociappinaph
 #       name: winget-pkgs
-#     copyright: "Copyright (c) 2024 Tu Nombre"
-#     description: "Un CLI moderno y rápido construido con Go + Cobra"
+#     copyright: "Copyright (c) 2025 mauroociappinaph"
+#     description: "Ayrton CLI — AI learning agent and SDD orchestrator"
 #     license: "MIT"
 
 # dockers:
 #   - image_templates:
-#       - "ghcr.io/mauroociappinaph/mi-cli:{{ .Tag }}"
-#       - "ghcr.io/mauroociappinaph/mi-cli:latest"
+#       - "ghcr.io/mauroociappinaph/ayrton:{{ .Tag }}"
+#       - "ghcr.io/mauroociappinaph/ayrton:latest"
 #     build_flag_templates:
 #       - "--platform=linux/amd64,linux/arm64"
 #     goos: linux
@@ -117,12 +117,12 @@ release:
 #       - arm64
 
 # nfpms:
-#   - package_name: mi-cli
-#     maintainer: "Tu Nombre <tu@email.com>"
-#     description: "Un CLI moderno y rápido construido con Go + Cobra"
+#   - package_name: ayrton
+#     maintainer: "Mauro Ociappina <mauro@ociappina.com>"
+#     description: "Ayrton CLI — AI learning agent and SDD orchestrator"
 #     license: "MIT"
 #     vendor: "mauroociappinaph"
-#     homepage: "https://github.com/mauroociappinaph/mi-cli"
+#     homepage: "https://github.com/mauroociappinaph/ayrton"
 #     formats:
 #       - deb
 #       - rpm

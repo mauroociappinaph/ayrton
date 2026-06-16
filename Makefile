@@ -1,4 +1,4 @@
-# Makefile para mi-cli
+# Makefile para ayrton
 # Uso: make <target>
 # Ejemplos: make build, make test, make lint, make release
 

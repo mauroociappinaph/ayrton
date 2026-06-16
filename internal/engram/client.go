@@ -135,7 +135,12 @@ func (c *Client) initSchema() error {
 func (c *Client) Save(ctx context.Context, obs *Observation) (int64, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	return c.saveLocked(ctx, obs)
+}
 
+// saveLocked saves an observation while already holding c.mu.Lock.
+// Extracted to avoid deadlock when called from SaveOrUpdate.
+func (c *Client) saveLocked(ctx context.Context, obs *Observation) (int64, error) {
 	now := time.Now()
 	obs.CreatedAt = now
 	obs.UpdatedAt = now
@@ -178,7 +183,7 @@ func (c *Client) SaveOrUpdate(ctx context.Context, obs *Observation) (int64, err
 	defer c.mu.Unlock()
 
 	if obs.TopicKey == "" {
-		return c.Save(ctx, obs)
+		return c.saveLocked(ctx, obs)
 	}
 
 	now := time.Now()
