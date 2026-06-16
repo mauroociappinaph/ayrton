@@ -48,7 +48,7 @@ var learnCmd = &cobra.Command{
 			return fmt.Errorf("learn pattern: %w", err)
 		}
 
-		fmt.Printf("✅ Learned pattern: %s\n", description)
+		cmd.Printf("✅ Learned pattern: %s\n", description)
 		return nil
 	},
 }
@@ -82,21 +82,21 @@ var recallCmd = &cobra.Command{
 		}
 
 		if len(patterns) == 0 {
-			fmt.Println("No patterns found")
+			cmd.Println("No patterns found")
 			return nil
 		}
 
-		fmt.Printf("Found %d pattern(s):\n\n", len(patterns))
+		cmd.Printf("Found %d pattern(s):\n\n", len(patterns))
 		for i, p := range patterns {
-			fmt.Printf("%d. %s\n", i+1, p.Description)
-			fmt.Printf("   Category: %s | Confidence: %.2f | Usage: %d\n", p.Category, p.Confidence, p.UsageCount)
+			cmd.Printf("%d. %s\n", i+1, p.Description)
+			cmd.Printf("   Category: %s | Confidence: %.2f | Usage: %d\n", p.Category, p.Confidence, p.UsageCount)
 			if p.Context != "" {
-				fmt.Printf("   Context: %s\n", p.Context)
+				cmd.Printf("   Context: %s\n", p.Context)
 			}
 			if p.Outcome != "" {
-				fmt.Printf("   Outcome: %s\n", p.Outcome)
+				cmd.Printf("   Outcome: %s\n", p.Outcome)
 			}
-			fmt.Println()
+			cmd.Println()
 		}
 		return nil
 	},
@@ -121,15 +121,15 @@ var recentCmd = &cobra.Command{
 		}
 
 		if len(patterns) == 0 {
-			fmt.Println("No recent patterns")
+			cmd.Println("No recent patterns")
 			return nil
 		}
 
-		fmt.Printf("Recent %d pattern(s):\n\n", len(patterns))
+		cmd.Printf("Recent %d pattern(s):\n\n", len(patterns))
 		for i, p := range patterns {
-			fmt.Printf("%d. %s\n", i+1, p.Description)
-			fmt.Printf("   Category: %s | Confidence: %.2f\n", p.Category, p.Confidence)
-			fmt.Println()
+			cmd.Printf("%d. %s\n", i+1, p.Description)
+			cmd.Printf("   Category: %s | Confidence: %.2f\n", p.Category, p.Confidence)
+			cmd.Println()
 		}
 		return nil
 	},

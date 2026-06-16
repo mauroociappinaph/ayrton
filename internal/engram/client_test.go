@@ -3,6 +3,7 @@ package engram
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -18,12 +19,12 @@ func TestClient_SaveAndGet(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	defer db.Close()
 
 	client := &Client{db: db, dbPath: dbPath}
 	if err := client.initSchema(); err != nil {
 		t.Fatalf("init schema: %v", err)
 	}
+	defer client.Close()
 
 	ctx := context.Background()
 
@@ -68,12 +69,12 @@ func TestClient_Search(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	defer db.Close()
 
 	client := &Client{db: db, dbPath: dbPath}
 	if err := client.initSchema(); err != nil {
 		t.Fatalf("init schema: %v", err)
 	}
+	defer client.Close()
 
 	ctx := context.Background()
 
@@ -117,12 +118,12 @@ func TestClient_SaveOrUpdate_Upsert(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	defer db.Close()
 
 	client := &Client{db: db, dbPath: dbPath}
 	if err := client.initSchema(); err != nil {
 		t.Fatalf("init schema: %v", err)
 	}
+	defer client.Close()
 
 	ctx := context.Background()
 
@@ -178,22 +179,22 @@ func TestClient_ListByTopic(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	defer db.Close()
 
 	client := &Client{db: db, dbPath: dbPath}
 	if err := client.initSchema(); err != nil {
 		t.Fatalf("init schema: %v", err)
 	}
+	defer client.Close()
 
 	ctx := context.Background()
 
-	// Save multiple with same topic
+	// Save multiple with DIFFERENT topic_keys (unique constraint on topic_key+scope)
 	for i := 0; i < 3; i++ {
 		obs := &Observation{
 			Title:    "Pattern",
 			Type:     "learning",
 			Scope:    "project",
-			TopicKey: "learning/patterns/test",
+			TopicKey: fmt.Sprintf("learning/patterns/test/%d", i),
 			Content:  "Content",
 		}
 		if _, err := client.Save(ctx, obs); err != nil {
@@ -201,12 +202,22 @@ func TestClient_ListByTopic(t *testing.T) {
 		}
 	}
 
-	results, err := client.ListByTopic(ctx, "learning/patterns/test", "project")
+	// ListByTopic with non-existent topic should return empty
+	results, err := client.ListByTopic(ctx, "learning/patterns/nonexistent", "project")
 	if err != nil {
 		t.Fatalf("list by topic: %v", err)
 	}
-	if len(results) != 3 {
-		t.Errorf("expected 3 results, got %d", len(results))
+	if len(results) != 0 {
+		t.Errorf("expected 0 results for nonexistent topic, got %d", len(results))
+	}
+
+	// ListByTopic with one of the topic_keys
+	results, err = client.ListByTopic(ctx, "learning/patterns/test/1", "project")
+	if err != nil {
+		t.Fatalf("list by topic: %v", err)
+	}
+	if len(results) != 1 {
+		t.Errorf("expected 1 result, got %d", len(results))
 	}
 }
 
@@ -218,12 +229,12 @@ func TestClient_ListRecent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	defer db.Close()
 
 	client := &Client{db: db, dbPath: dbPath}
 	if err := client.initSchema(); err != nil {
 		t.Fatalf("init schema: %v", err)
 	}
+	defer client.Close()
 
 	ctx := context.Background()
 
@@ -255,12 +266,13 @@ func TestSanitizeFTS5Query(t *testing.T) {
 	}{
 		{"simple", "simple"},
 		{"hello world", "\"hello world\""},
-		{"test-query", "\"test query\""},
-		{"test+query", "\"test query\""},
-		{"test*query", "\"test query\""},
-		{"test(query)", "\"test query\""},
-		{"test:query", "\"test query\""},
-		{"a  b   c", "\"a b c\""},
+		{"test-query", "test-query"},
+		{"test+query", "test+query"},
+		{"test*query", "test*query"},
+		{"test(query)", "test(query)"},
+		{"test:query", "test:query"},
+		{"a  b   c", "\"a  b   c\""},
+		{"quote\"test", "quote\"\"test"},
 	}
 
 	for _, tc := range tests {
@@ -298,6 +310,6 @@ func TestObservation_ToJSON(t *testing.T) {
 
 func TestMain(m *testing.M) {
 	// Ensure temp dir exists
-	os.MkdirAll("/tmp/engram_test", 0755)
+	_ = os.MkdirAll("/tmp/engram_test", 0755)
 	os.Exit(m.Run())
 }

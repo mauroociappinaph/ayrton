@@ -2,16 +2,18 @@ package learning
 
 import (
 	"context"
+	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/mauroociappinaph/ayrton/internal/engram"
 )
 
 func TestAgent_LearnAndRecall(t *testing.T) {
-	agent, err := NewAgent("test")
+	agent, err := NewTestAgent(t, "test")
 	if err != nil {
 		t.Fatalf("create agent: %v", err)
 	}
-	defer agent.Close()
 
 	ctx := context.Background()
 
@@ -41,49 +43,48 @@ func TestAgent_LearnAndRecall(t *testing.T) {
 }
 
 func TestAgent_RecallByCategory(t *testing.T) {
-agent, err := NewAgent("test")
-if err != nil {
-t.Fatalf("create agent: %v", err)
-}
-defer agent.Close()
-
-ctx := context.Background()
-
-// Learn patterns with different descriptions but same category
-// Note: current implementation uses same topic_key per category, so only last one persists
-// This test verifies the RecallByCategory function works
-pattern := &Pattern{
-Description: "Category pattern unique",
-Category:    "test-category",
-Context:     "Test context",
-Confidence:  0.8,
-}
-if err := agent.Learn(ctx, pattern); err != nil {
-  t.Fatalf("learn: %v", err)
+	agent, err := NewTestAgent(t, "test")
+	if err != nil {
+		t.Fatalf("create agent: %v", err)
 	}
 
-patterns, err := agent.RecallByCategory(ctx, "test-category", 10)
-if err != nil {
-  t.Fatalf("recall by category: %v", err)
-}
-if len(patterns) != 1 {
-  t.Errorf("expected 1 pattern, got %d", len(patterns))
+	ctx := context.Background()
+
+	// Learn patterns with different descriptions but same category
+	// Note: current implementation uses same topic_key per category, so only last one persists
+	// This test verifies the RecallByCategory function works
+	pattern := &Pattern{
+		Description: "Category pattern unique",
+		Category:    "test-category",
+		Context:     "Test context",
+		Confidence:  0.8,
+	}
+	if err := agent.Learn(ctx, pattern); err != nil {
+		t.Fatalf("learn: %v", err)
+	}
+
+	patterns, err := agent.RecallByCategory(ctx, "test-category", 10)
+	if err != nil {
+		t.Fatalf("recall by category: %v", err)
+	}
+	if len(patterns) != 1 {
+		t.Errorf("expected 1 pattern, got %d", len(patterns))
 	}
 }
 
 func TestAgent_GetRecentPatterns(t *testing.T) {
-	agent, err := NewAgent("test")
+	agent, err := NewTestAgent(t, "test")
 	if err != nil {
 		t.Fatalf("create agent: %v", err)
 	}
-	defer agent.Close()
 
 	ctx := context.Background()
 
+	// Use different categories to avoid upsert collisions
 	for i := 0; i < 5; i++ {
 		pattern := &Pattern{
-			Description: "Recent pattern",
-			Category:    "recent",
+			Description: "Recent pattern " + string(rune('0'+i)),
+			Category:    "recent-" + string(rune('0'+i)),
 			Confidence:  0.7,
 		}
 		if err := agent.Learn(ctx, pattern); err != nil {
@@ -101,11 +102,10 @@ func TestAgent_GetRecentPatterns(t *testing.T) {
 }
 
 func TestAgent_LearnFromSDD(t *testing.T) {
-	agent, err := NewAgent("test")
+	agent, err := NewTestAgent(t, "test")
 	if err != nil {
 		t.Fatalf("create agent: %v", err)
 	}
-	defer agent.Close()
 
 	ctx := context.Background()
 
@@ -126,11 +126,10 @@ func TestAgent_LearnFromSDD(t *testing.T) {
 }
 
 func TestAgent_LearnFromError(t *testing.T) {
-	agent, err := NewAgent("test")
+	agent, err := NewTestAgent(t, "test")
 	if err != nil {
 		t.Fatalf("create agent: %v", err)
 	}
-	defer agent.Close()
 
 	ctx := context.Background()
 
@@ -151,10 +150,15 @@ func TestAgent_LearnFromError(t *testing.T) {
 }
 
 func TestPattern_Persistence(t *testing.T) {
-	agent1, err := NewAgent("persistence-test")
+	// Use a shared temporary directory for both agents to share the database
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "test.db")
+
+	client1, err := engram.NewTestClientWithPath(t, dbPath)
 	if err != nil {
-		t.Fatalf("create agent1: %v", err)
+		t.Fatalf("create client1: %v", err)
 	}
+	agent1 := &Agent{client: client1, scope: "persistence-test"}
 
 	ctx := context.Background()
 	pattern := &Pattern{
@@ -166,13 +170,12 @@ func TestPattern_Persistence(t *testing.T) {
 	if err := agent1.Learn(ctx, pattern); err != nil {
 		t.Fatalf("learn: %v", err)
 	}
-	agent1.Close()
 
-	agent2, err := NewAgent("persistence-test")
+	client2, err := engram.NewTestClientWithPath(t, dbPath)
 	if err != nil {
-		t.Fatalf("create agent2: %v", err)
+		t.Fatalf("create client2: %v", err)
 	}
-	defer agent2.Close()
+	agent2 := &Agent{client: client2, scope: "persistence-test"}
 
 	patterns, err := agent2.Recall(ctx, "persistent", 10)
 	if err != nil {
@@ -187,11 +190,10 @@ func TestPattern_Persistence(t *testing.T) {
 }
 
 func TestAgent_ConcurrentAccess(t *testing.T) {
-	agent, err := NewAgent("concurrent")
+	agent, err := NewTestAgent(t, "concurrent")
 	if err != nil {
 		t.Fatalf("create agent: %v", err)
 	}
-	defer agent.Close()
 
 	ctx := context.Background()
 
@@ -224,7 +226,7 @@ func TestAgent_ConcurrentAccess(t *testing.T) {
 }
 
 func TestAgent_Close(t *testing.T) {
-	agent, err := NewAgent("close-test")
+	agent, err := NewTestAgent(t, "close-test")
 	if err != nil {
 		t.Fatalf("create agent: %v", err)
 	}

@@ -69,7 +69,12 @@ func initConfig() error {
 	viper.SetEnvPrefix("AYRTON")
 	viper.AutomaticEnv()
 
-	if err := viper.ReadInConfig(); err == nil {
+	if err := viper.ReadInConfig(); err != nil {
+		// Only ignore "config file not found" errors; return all other errors
+		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
+			return fmt.Errorf("read config: %w", err)
+		}
+	} else {
 		if viper.GetBool("verbose") {
 			fmt.Fprintf(os.Stderr, "Usando config: %s\n", viper.ConfigFileUsed())
 		}

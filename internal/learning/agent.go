@@ -2,8 +2,9 @@ package learning
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
-	"strings"
+	"testing"
 	"time"
 
 	"github.com/mauroociappinaph/ayrton/internal/engram"
@@ -37,6 +38,16 @@ func NewAgent(scope string) (*Agent, error) {
 	return &Agent{client: client, scope: scope}, nil
 }
 
+// NewTestAgent creates a new Learning Agent with a temporary database for testing
+func NewTestAgent(t testing.TB, scope string) (*Agent, error) {
+	t.Helper()
+	client, err := engram.NewTestClient(t)
+	if err != nil {
+		return nil, fmt.Errorf("create engram client: %w", err)
+	}
+	return &Agent{client: client, scope: scope}, nil
+}
+
 // Close closes the agent
 func (a *Agent) Close() error {
 	return a.client.Close()
@@ -50,23 +61,20 @@ func (a *Agent) Learn(ctx context.Context, pattern *Pattern) error {
 	pattern.CreatedAt = time.Now()
 	pattern.UpdatedAt = time.Now()
 
-	content := fmt.Sprintf(`**Pattern**: %s
-
-**Category**: %s
-**Context**: %s
-**Outcome**: %s
-**Confidence**: %.2f
-**Usage**: %d`, pattern.Description, pattern.Category, pattern.Context, pattern.Outcome, pattern.Confidence, pattern.UsageCount)
+	contentBytes, err := json.Marshal(pattern)
+	if err != nil {
+		return fmt.Errorf("marshal pattern: %w", err)
+	}
 
 	obs := &engram.Observation{
 		Title:    fmt.Sprintf("Pattern: %s", pattern.Description),
 		Type:     "learning-pattern",
 		Scope:    a.scope,
 		TopicKey: fmt.Sprintf("learning/patterns/%s", pattern.Category),
-		Content:  content,
+		Content:  string(contentBytes),
 	}
 
-	_, err := a.client.SaveOrUpdate(ctx, obs)
+	_, err = a.client.SaveOrUpdate(ctx, obs)
 	return err
 }
 
@@ -130,32 +138,16 @@ func (a *Agent) GetRecentPatterns(ctx context.Context, limit int) ([]Pattern, er
 	return patterns, nil
 }
 
-// parsePattern extracts pattern from observation content
+// parsePattern extracts pattern from observation content (JSON format)
 func (a *Agent) parsePattern(content string) *Pattern {
-	lines := strings.Split(content, "\n")
-	p := &Pattern{}
-
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, "**Pattern**: ") {
-			p.Description = strings.TrimPrefix(line, "**Pattern**: ")
-		} else if strings.HasPrefix(line, "**Category**: ") {
-			p.Category = strings.TrimPrefix(line, "**Category**: ")
-		} else if strings.HasPrefix(line, "**Context**: ") {
-			p.Context = strings.TrimPrefix(line, "**Context**: ")
-		} else if strings.HasPrefix(line, "**Outcome**: ") {
-			p.Outcome = strings.TrimPrefix(line, "**Outcome**: ")
-		} else if strings.HasPrefix(line, "**Confidence**: ") {
-			fmt.Sscanf(strings.TrimPrefix(line, "**Confidence**: "), "%f", &p.Confidence)
-		} else if strings.HasPrefix(line, "**Usage**: ") {
-			fmt.Sscanf(strings.TrimPrefix(line, "**Usage**: "), "%d", &p.UsageCount)
-		}
+	var p Pattern
+	if err := json.Unmarshal([]byte(content), &p); err != nil {
+		return nil
 	}
-
 	if p.Description == "" {
 		return nil
 	}
-	return p
+	return &p
 }
 
 // LearnFromSDD saves SDD decision/pattern automatically

@@ -2,12 +2,15 @@ package engram
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"testing"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -70,6 +73,35 @@ func NewClient() (*Client, error) {
 	return c, nil
 }
 
+// NewTestClient creates a new Engram client with a temporary database for testing
+func NewTestClient(t testing.TB) (*Client, error) {
+	t.Helper()
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "test.db")
+	return newTestClientWithPath(t, dbPath)
+}
+
+// NewTestClientWithPath creates a new Engram client with a specific database path for testing
+func NewTestClientWithPath(t testing.TB, dbPath string) (*Client, error) {
+	t.Helper()
+	return newTestClientWithPath(t, dbPath)
+}
+
+func newTestClientWithPath(t testing.TB, dbPath string) (*Client, error) {
+	db, err := sql.Open("sqlite", dbPath+"?_pragma=journal_mode(WAL)&_pragma=foreign_keys(ON)")
+	if err != nil {
+		return nil, fmt.Errorf("open db: %w", err)
+	}
+
+	c := &Client{db: db, dbPath: dbPath}
+	if err := c.initSchema(); err != nil {
+		return nil, fmt.Errorf("init schema: %w", err)
+	}
+
+	t.Cleanup(func() { c.Close() })
+	return c, nil
+}
+
 // initSchema initializes the database schema with FTS5
 func (c *Client) initSchema() error {
 	schema := `
@@ -81,7 +113,8 @@ func (c *Client) initSchema() error {
 		topic_key TEXT,
 		content TEXT NOT NULL,
 		created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-		updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+		updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		UNIQUE(topic_key, scope)
 	);
 
 	CREATE INDEX IF NOT EXISTS idx_observations_topic ON observations(topic_key);
@@ -102,8 +135,7 @@ func (c *Client) initSchema() error {
 	END;
 
 	CREATE TRIGGER IF NOT EXISTS observations_ad AFTER DELETE ON observations BEGIN
-		INSERT INTO observations_fts(observations_fts, rowid, title, content, type, scope, topic_key)
-		VALUES ('delete', old.id, old.title, old.content, old.type, old.scope, old.topic_key);
+		INSERT INTO observations_fts(observations_fts, rowid) VALUES ('delete', old.id);
 	END;
 
 	CREATE TRIGGER IF NOT EXISTS observations_au AFTER UPDATE ON observations BEGIN
@@ -124,10 +156,13 @@ func (c *Client) Save(ctx context.Context, obs *Observation) (int64, error) {
 	obs.CreatedAt = now
 	obs.UpdatedAt = now
 
+	// Use NULL for empty topic_key to allow multiple rows without topic_key under UNIQUE constraint
+	topicKey := nullIfEmpty(obs.TopicKey)
+
 	result, err := c.db.ExecContext(ctx, `
 		INSERT INTO observations (title, type, scope, topic_key, content, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?)
-	`, obs.Title, obs.Type, obs.Scope, obs.TopicKey, obs.Content, obs.CreatedAt, obs.UpdatedAt)
+	`, obs.Title, obs.Type, obs.Scope, topicKey, obs.Content, obs.CreatedAt, obs.UpdatedAt)
 	if err != nil {
 		return 0, err
 	}
@@ -146,50 +181,70 @@ func (c *Client) Update(ctx context.Context, obs *Observation) error {
 	_, err := c.db.ExecContext(ctx, `
 		UPDATE observations SET title=?, type=?, scope=?, topic_key=?, content=?, updated_at=?
 		WHERE id=?
-	`, obs.Title, obs.Type, obs.Scope, obs.TopicKey, obs.Content, obs.UpdatedAt, obs.ID)
+	`, obs.Title, obs.Type, obs.Scope, nullIfEmpty(obs.TopicKey), obs.Content, obs.UpdatedAt, obs.ID)
 	return err
 }
 
-// SaveOrUpdate saves or updates an observation by topic_key (upsert)
+// SaveOrUpdate saves or updates an observation by topic_key (upsert) - atomic
 func (c *Client) SaveOrUpdate(ctx context.Context, obs *Observation) (int64, error) {
 	if obs.TopicKey == "" {
 		return c.Save(ctx, obs)
 	}
 
-	// Check if exists
-	var existing Observation
-	err := c.db.QueryRowContext(ctx, `
-		SELECT id, title, type, scope, topic_key, content, created_at, updated_at
-		FROM observations WHERE topic_key=? AND scope=?
-	`, obs.TopicKey, obs.Scope).Scan(
-		&existing.ID, &existing.Title, &existing.Type, &existing.Scope,
-		&existing.TopicKey, &existing.Content, &existing.CreatedAt, &existing.UpdatedAt,
-	)
+	now := time.Now()
+	obs.UpdatedAt = now
 
-	if err == sql.ErrNoRows {
-		return c.Save(ctx, obs)
-	}
+	result, err := c.db.ExecContext(ctx, `
+		INSERT INTO observations (title, type, scope, topic_key, content, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(topic_key, scope) DO UPDATE SET
+			title=excluded.title,
+			type=excluded.type,
+			content=excluded.content,
+			updated_at=excluded.updated_at
+	`, obs.Title, obs.Type, obs.Scope, obs.TopicKey, obs.Content, now, now)
 	if err != nil {
 		return 0, err
 	}
 
-	// Update existing
-	existing.Title = obs.Title
-	existing.Type = obs.Type
-	existing.Content = obs.Content
-	existing.UpdatedAt = time.Now()
-	return existing.ID, c.Update(ctx, &existing)
+	id, err := result.LastInsertId()
+	if err != nil {
+		return 0, err
+	}
+	if id == 0 {
+		// On conflict, LastInsertId returns 0 in SQLite; fetch the actual ID
+		err = c.db.QueryRowContext(ctx, `
+			SELECT id FROM observations WHERE topic_key=? AND scope=?
+		`, obs.TopicKey, obs.Scope).Scan(&id)
+		if err != nil {
+			return 0, err
+		}
+	}
+	obs.ID = id
+	return id, nil
+}
+
+// nullIfEmpty returns NULL for empty string, otherwise the string value
+func nullIfEmpty(s string) any {
+	if s == "" {
+		return nil
+	}
+	return s
 }
 
 // Get retrieves an observation by ID
 func (c *Client) Get(ctx context.Context, id int64) (*Observation, error) {
 	obs := &Observation{}
+	var topicKey sql.NullString
 	err := c.db.QueryRowContext(ctx, `
 		SELECT id, title, type, scope, topic_key, content, created_at, updated_at
 		FROM observations WHERE id=?
-	`, id).Scan(&obs.ID, &obs.Title, &obs.Type, &obs.Scope, &obs.TopicKey, &obs.Content, &obs.CreatedAt, &obs.UpdatedAt)
+	`, id).Scan(&obs.ID, &obs.Title, &obs.Type, &obs.Scope, &topicKey, &obs.Content, &obs.CreatedAt, &obs.UpdatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
+	}
+	if topicKey.Valid {
+		obs.TopicKey = topicKey.String
 	}
 	return obs, err
 }
@@ -216,10 +271,7 @@ func (c *Client) SearchWithOptions(ctx context.Context, query string, opts Searc
 		whereClause += " AND o.type = ?"
 		args = append(args, opts.Type)
 	}
-	if opts.Project != "" {
-		whereClause += " AND o.project = ?"
-		args = append(args, opts.Project)
-	}
+
 	if opts.Scope != "" {
 		whereClause += " AND o.scope = ?"
 		args = append(args, opts.Scope)
@@ -244,9 +296,13 @@ func (c *Client) SearchWithOptions(ctx context.Context, query string, opts Searc
 	var results []SearchResult
 	for rows.Next() {
 		var r SearchResult
-		err := rows.Scan(&r.ID, &r.Title, &r.Type, &r.Scope, &r.TopicKey, &r.Content, &r.CreatedAt, &r.UpdatedAt, &r.Rank)
+		var topicKeyNull sql.NullString
+		err := rows.Scan(&r.ID, &r.Title, &r.Type, &r.Scope, &topicKeyNull, &r.Content, &r.CreatedAt, &r.UpdatedAt, &r.Rank)
 		if err != nil {
 			return nil, err
+		}
+		if topicKeyNull.Valid {
+			r.TopicKey = topicKeyNull.String
 		}
 		results = append(results, r)
 	}
@@ -268,9 +324,13 @@ func (c *Client) ListByTopic(ctx context.Context, topicKey, scope string) ([]Obs
 	var results []Observation
 	for rows.Next() {
 		var o Observation
-		err := rows.Scan(&o.ID, &o.Title, &o.Type, &o.Scope, &o.TopicKey, &o.Content, &o.CreatedAt, &o.UpdatedAt)
+		var topicKeyNull sql.NullString
+		err := rows.Scan(&o.ID, &o.Title, &o.Type, &o.Scope, &topicKeyNull, &o.Content, &o.CreatedAt, &o.UpdatedAt)
 		if err != nil {
 			return nil, err
+		}
+		if topicKeyNull.Valid {
+			o.TopicKey = topicKeyNull.String
 		}
 		results = append(results, o)
 	}
@@ -293,9 +353,13 @@ func (c *Client) ListRecent(ctx context.Context, scope string, limit int) ([]Obs
 	var results []Observation
 	for rows.Next() {
 		var o Observation
-		err := rows.Scan(&o.ID, &o.Title, &o.Type, &o.Scope, &o.TopicKey, &o.Content, &o.CreatedAt, &o.UpdatedAt)
+		var topicKeyNull sql.NullString
+		err := rows.Scan(&o.ID, &o.Title, &o.Type, &o.Scope, &topicKeyNull, &o.Content, &o.CreatedAt, &o.UpdatedAt)
 		if err != nil {
 			return nil, err
+		}
+		if topicKeyNull.Valid {
+			o.TopicKey = topicKeyNull.String
 		}
 		results = append(results, o)
 	}
@@ -309,16 +373,10 @@ func (c *Client) Close() error {
 
 // sanitizeFTS5Query sanitizes user input for FTS5 MATCH queries
 func sanitizeFTS5Query(query string) string {
-	// FTS5 special characters that need escaping
-	special := []string{`"`, `'`, `-`, `+`, `*`, `(`, `)`, `:`}
-	result := query
-	for _, char := range special {
-		result = strings.ReplaceAll(result, char, " ")
-	}
-	// Collapse multiple spaces
-	result = strings.Join(strings.Fields(result), " ")
+	// Escape double quotes by doubling them (FTS5 standard)
+	result := strings.ReplaceAll(query, `"`, `""`)
 	// Wrap in quotes for phrase search if multiple terms
-	if strings.Contains(result, " ") {
+	if strings.Contains(strings.TrimSpace(result), " ") {
 		return `"` + result + `"`
 	}
 	return result
@@ -331,16 +389,16 @@ func (o *Observation) ToJSON() (string, error) {
 }
 
 // SaveLesson guarda una lección aprendida
-func (c *Client) SaveLesson(trigger, action, outcome string, ctx map[string]interface{}, agents []string, confidence float64) (int64, error) {
+func (c *Client) SaveLesson(ctx context.Context, trigger, action, outcome string, ctxMap map[string]interface{}, agents []string, confidence float64) (int64, error) {
 	content := fmt.Sprintf(`**Trigger:** %s
 **Action:** %s
 **Outcome:** %s
 **Context:** %v
 **Agents:** %v
 **Confidence:** %.2f
-**Timestamp:** %s`, trigger, action, outcome, ctx, agents, confidence, time.Now().Format(time.RFC3339))
+**Timestamp:** %s`, trigger, action, outcome, ctxMap, agents, confidence, time.Now().Format(time.RFC3339))
 
-	return c.SaveOrUpdate(context.Background(), &Observation{
+	return c.SaveOrUpdate(ctx, &Observation{
 		Title:    fmt.Sprintf("Lesson: %s → %s", trigger, outcome),
 		Type:     "learning",
 		Scope:    "project",
@@ -350,8 +408,8 @@ func (c *Client) SaveLesson(trigger, action, outcome string, ctx map[string]inte
 }
 
 // SavePattern guarda/actualiza un patrón
-func (c *Client) SavePattern(trigger string, pattern *Pattern) error {
-	_, err := c.SaveOrUpdate(context.Background(), &Observation{
+func (c *Client) SavePattern(ctx context.Context, trigger string, pattern *Pattern) error {
+	_, err := c.SaveOrUpdate(ctx, &Observation{
 		Title:    fmt.Sprintf("Pattern: %s", trigger),
 		Type:     "pattern",
 		Scope:    "project",
@@ -362,8 +420,8 @@ func (c *Client) SavePattern(trigger string, pattern *Pattern) error {
 }
 
 // GetPatterns busca patrones
-func (c *Client) GetPatterns(trigger string, limit int) ([]SearchResult, error) {
-	return c.SearchWithOptions(context.Background(), trigger, SearchOptions{
+func (c *Client) GetPatterns(ctx context.Context, trigger string, limit int) ([]SearchResult, error) {
+	return c.SearchWithOptions(ctx, trigger, SearchOptions{
 		Type:    "pattern",
 		Project: "project",
 		Scope:   "project",
@@ -372,8 +430,8 @@ func (c *Client) GetPatterns(trigger string, limit int) ([]SearchResult, error) 
 }
 
 // GetLessons busca lecciones
-func (c *Client) GetLessons(query string, limit int) ([]SearchResult, error) {
-	return c.SearchWithOptions(context.Background(), query, SearchOptions{
+func (c *Client) GetLessons(ctx context.Context, query string, limit int) ([]SearchResult, error) {
+	return c.SearchWithOptions(ctx, query, SearchOptions{
 		Type:    "learning",
 		Project: "project",
 		Scope:   "project",
@@ -382,8 +440,9 @@ func (c *Client) GetLessons(query string, limit int) ([]SearchResult, error) {
 }
 
 func slug(s string) string {
-	// Simple slugify
-	return fmt.Sprintf("%x", len(s))
+	// Generate deterministic slug from SHA256 hash (truncated to 16 chars)
+	h := sha256.Sum256([]byte(s))
+	return hex.EncodeToString(h[:])[:16]
 }
 
 // Pattern estructura para patrones aprendidos
