@@ -9,7 +9,7 @@ import (
 	"log"
 	"time"
 
-	"github.com/mauroociappinaph/ayrton/internal/engram"
+	"github.com/mauroociappina/ayrton/internal/engram"
 )
 
 // Agent is the Learning Agent that persists patterns cross-session

@@ -9,7 +9,7 @@ BINARY_NAME := ayrton
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo "none")
 DATE := $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
-LDFLAGS := -s -w -X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.date=$(DATE)
+LDFLAGS := -s -w -X github.com/mauroociappina/ayrton/cmd.version=$(VERSION) -X github.com/mauroociappina/ayrton/cmd.commit=$(COMMIT) -X github.com/mauroociappina/ayrton/cmd.date=$(DATE)
 
 # Default target
 help:
@@ -70,7 +70,8 @@ version: ## Muestra próxima versión (patch bump)
 
 ship: check ## 🚀 Pipeline completo: validate → tag → push → release
 	@echo "🚀 Shipping..."
-	@VERSION=$$(make -s version); \
+	@git diff --quiet --exit-code || { echo "❌ Hay cambios sin commit"; exit 1; }; \
+	VERSION=$$(make -s version); \
 	echo "📦 Version: $$VERSION"; \
 	git tag $$VERSION; \
 	git push origin $$VERSION; \

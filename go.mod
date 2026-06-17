@@ -1,4 +1,4 @@
-module github.com/mauroociappinaph/ayrton
+module github.com/mauroociappina/ayrton
 
 go 1.25.5
 

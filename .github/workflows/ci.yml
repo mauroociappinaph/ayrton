@@ -44,7 +44,7 @@ jobs:
         with:
           files: ${{ env.COVERAGE_FILE }}
           flags: unittests
-          fail_ci_if_error: false
+          fail_ci_if_error: true
 
   lint:
     name: Lint
@@ -89,7 +89,7 @@ jobs:
 
       - name: Build
         run: |
-          go build -ldflags="-s -w -X main.version=dev -X main.commit=${{ github.sha }} -X main.date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" -o ayrton .
+          go build -ldflags="-s -w -X github.com/mauroociappina/ayrton/cmd.version=dev -X github.com/mauroociappina/ayrton/cmd.commit=${{ github.sha }} -X github.com/mauroociappina/ayrton/cmd.date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" -o ayrton .
 
       - name: Test binary
         run: ./ayrton version

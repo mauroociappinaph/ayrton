@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mauroociappinaph/ayrton/internal/engram"
+	"github.com/mauroociappina/ayrton/internal/engram"
 )
 
 func newTestAgent(t testing.TB, scope string) (*Agent, error) {

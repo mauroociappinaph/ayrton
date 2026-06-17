@@ -14,7 +14,6 @@ updates:
       - "go"
     allow:
       - dependency-type: "direct"
-      - dependency-type: "indirect"
     commit-message:
       prefix: "chore(deps)"
       include: "scope"

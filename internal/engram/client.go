@@ -101,6 +101,9 @@ func (c *Client) initSchema() error {
 		return fmt.Errorf("create table: %w", err)
 	}
 
+	// v1.0 databases had no UNIQUE constraint so duplicates could accumulate.
+	// The migration preserves the newest row per (topic_key, scope) when adding the constraint.
+	//
 	// Phase 2: Migration for pre-v1.1 databases.
 	//
 	// Old databases may be missing:
@@ -122,6 +125,12 @@ func (c *Client) initSchema() error {
 			ALTER TABLE observations RENAME TO observations_old;
 		`); err != nil {
 			return fmt.Errorf("migrate: rename old table: %w", err)
+		}
+
+		var duplicateCount int64
+		c.db.QueryRow(`SELECT COUNT(*) - COUNT(DISTINCT topic_key || '|' || scope) FROM observations_old`).Scan(&duplicateCount)
+		if duplicateCount > 0 {
+			log.Printf("warning: migration: deduplicating %d old observations (keeping newest per topic_key+scope)", duplicateCount)
 		}
 
 		if _, err := c.db.Exec(`

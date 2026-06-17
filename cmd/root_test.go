@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -298,7 +299,7 @@ func TestLearn_RecentCmd(t *testing.T) {
 	// Add multiple patterns with different categories to avoid upsert
 	for i := 0; i < 3; i++ {
 		cmd := newTestCommand()
-		cmd.SetArgs([]string{"learn", "add", "Recent pattern", "--category", "recent-" + string(rune('0'+i))})
+		cmd.SetArgs([]string{"learn", "add", "Recent pattern", "--category", fmt.Sprintf("recent-%d", i)})
 		err := cmd.Execute()
 		require.NoError(t, err)
 	}

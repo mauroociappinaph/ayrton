@@ -13,10 +13,10 @@ cat > README.md << 'READMEEOF'
 
 ```bash
 # Install
-go install github.com/mauroociappinaph/ayrton@latest
+go install github.com/mauroociappina/ayrton@latest
 
 # Or build from source
-git clone https://github.com/mauroociappinaph/ayrton
+git clone https://github.com/mauroociappina/ayrton
 cd ayrton && go build -o ayrton .
 ```
 
@@ -62,9 +62,9 @@ Create a GitHub issue with label `autonomous` → full SDD loop executes automat
 
 ## 🔗 Links
 
-- **Repo**: https://github.com/mauroociappinaph/ayrton
-- **Issues**: https://github.com/mauroociappinaph/ayrton/issues
-- **Actions**: https://github.com/mauroociappinaph/ayrton/actions
+- **Repo**: https://github.com/mauroociappina/ayrton
+- **Issues**: https://github.com/mauroociappina/ayrton/issues
+- **Actions**: https://github.com/mauroociappina/ayrton/actions
 
 ---
 

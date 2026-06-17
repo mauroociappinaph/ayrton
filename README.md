@@ -20,10 +20,10 @@ Built because I was tired of re-explaining the same things to every new AI sessi
 
 ```bash
 # Install (via Go)
-go install github.com/mauroociappinaph/ayrton@latest
+go install github.com/mauroociappina/ayrton@latest
 
 # Or build from source
-git clone https://github.com/mauroociappinaph/ayrton
+git clone https://github.com/mauroociappina/ayrton
 cd ayrton && go build -o ayrton .
 ```
 
@@ -115,7 +115,7 @@ This isn't a toy — it's how I build features in my own projects. The loop hand
 
 ## Architecture
 
-- **Core**: Go 1.23 + Cobra + Viper
+- **Core**: Go 1.25 + Cobra + Viper
 - **Memory**: Engram (SQLite + FTS5) — zero CGO, fully portable
 - **Agents**: 12 specialized agents (SDD phases + Learning + Auditor + Revenue + Orchestrator)
 - **CI/CD**: GitHub Actions with SDD Autonomous Loop
@@ -126,11 +126,11 @@ This isn't a toy — it's how I build features in my own projects. The loop hand
 ## Installation
 
 ### Pre-built Binaries
-Download from [GitHub Releases](https://github.com/mauroociappinaph/ayrton/releases) — Linux, macOS, Windows.
+Download from [GitHub Releases](https://github.com/mauroociappina/ayrton/releases) — Linux, macOS, Windows.
 
 ### From Source
 ```bash
-git clone https://github.com/mauroociappinaph/ayrton
+git clone https://github.com/mauroociappina/ayrton
 cd ayrton
 make ship        # validates, tags, pushes, releases (see Makefile)
 # or just:
@@ -151,10 +151,10 @@ make snapshot     # local GoReleaser snapshot build
 
 ## Links
 
-- **Repo**: https://github.com/mauroociappinaph/ayrton
-- **Releases**: https://github.com/mauroociappinaph/ayrton/releases
-- **Issues**: https://github.com/mauroociappinaph/ayrton/issues
-- **Actions**: https://github.com/mauroociappinaph/ayrton/actions
+- **Repo**: https://github.com/mauroociappina/ayrton
+- **Releases**: https://github.com/mauroociappina/ayrton/releases
+- **Issues**: https://github.com/mauroociappina/ayrton/issues
+- **Actions**: https://github.com/mauroociappina/ayrton/actions
 
 ---
 

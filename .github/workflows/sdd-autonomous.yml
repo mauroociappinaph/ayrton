@@ -74,7 +74,9 @@ jobs:
         run: |
           set -e
           
-          BRANCH="sdd/issue-${ISSUE_NUMBER}-$(echo "$ISSUE_TITLE" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/--*/-/g' | sed 's/^-//;s/-$//' | cut -c1-50)"
+          TITLE_SLUG=$(echo "$ISSUE_TITLE" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/--*/-/g' | sed 's/^-//;s/-$//')
+          TITLE_HASH=$(echo "$ISSUE_TITLE" | md5sum | cut -c1-8)
+          BRANCH="sdd/issue-${ISSUE_NUMBER}-$(echo "$TITLE_SLUG" | cut -c1-42)-${TITLE_HASH}"
           git checkout -b "$BRANCH"
           
           echo "=== SDD Phase 1: PROPOSE ==="

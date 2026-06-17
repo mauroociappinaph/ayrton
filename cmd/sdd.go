@@ -263,7 +263,10 @@ var sddVerifyCmd = &cobra.Command{
 }
 
 func findProjectRoot() string {
-	dir, _ := os.Getwd()
+	dir, err := os.Getwd()
+	if err != nil {
+		return ""
+	}
 	for {
 		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
 			return dir

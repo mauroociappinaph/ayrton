@@ -10,7 +10,7 @@ import (
 	"github.com/mark3labs/mcp-go/server"
 	"github.com/spf13/cobra"
 
-	"github.com/mauroociappinaph/ayrton/internal/engram"
+	"github.com/mauroociappina/ayrton/internal/engram"
 )
 
 // mcpCmd starts the MCP stdio server for AI agent memory access.

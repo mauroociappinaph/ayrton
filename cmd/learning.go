@@ -6,7 +6,7 @@ import (
 	"math"
 
 	"github.com/spf13/cobra"
-	"github.com/mauroociappinaph/ayrton/internal/learning"
+	"github.com/mauroociappina/ayrton/internal/learning"
 )
 
 var learningCmd = &cobra.Command{
