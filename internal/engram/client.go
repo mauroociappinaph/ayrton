@@ -128,7 +128,9 @@ func (c *Client) initSchema() error {
 		}
 
 		var duplicateCount int64
-		c.db.QueryRow(`SELECT COUNT(*) - COUNT(DISTINCT topic_key || '|' || scope) FROM observations_old`).Scan(&duplicateCount)
+		if err := c.db.QueryRow(`SELECT COUNT(*) - COUNT(DISTINCT topic_key || '|' || scope) FROM observations_old`).Scan(&duplicateCount); err != nil {
+			return fmt.Errorf("migrate: count duplicates: %w", err)
+		}
 		if duplicateCount > 0 {
 			log.Printf("warning: migration: deduplicating %d old observations (keeping newest per topic_key+scope)", duplicateCount)
 		}
