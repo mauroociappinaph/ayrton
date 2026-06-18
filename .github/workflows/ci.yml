@@ -62,6 +62,9 @@ jobs:
       - name: Set local module replace (for PR builds)
         run: go mod edit -replace github.com/mauroociappinaph/ayrton=./
 
+      - name: Resolve modules with replace directive
+        run: go build ./...
+
       - name: Install golangci-lint
         uses: golangci/golangci-lint-action@v9
         with:
