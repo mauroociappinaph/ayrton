@@ -36,6 +36,7 @@ cd ayrton && go build -o ayrton .
 | `ayrton mcp` | MCP stdio server — expone memoria persistente para agentes de IA |
 | `ayrton sdd propose/spec/design/tasks/apply/verify/archive` | Spec-Driven Development workflow |
 | `ayrton learn add/recall/recent` | Learning Agent with persistent memory |
+| `ayrton github-bot serve/once/config/install` | GitHub App Bot — auto-review PRs, @mentions, SDD via comments |
 | `ayrton version` | Show version info |
 
 ---
@@ -94,6 +95,58 @@ Agrega esto a `~/.claude/settings.json`:
 ```
 
 En la próxima sesión de Claude Code, `mem_save`, `mem_search` y `mem_context` estarán disponibles como herramientas nativas.
+
+---
+
+## GitHub App Bot — Autonomous SDD via PRs
+
+`ayrton github-bot` ejecuta un **GitHub App** que reacciona a eventos de PR y comentarios:
+
+```bash
+# Configuración interactiva (crea App manifest, callback, guarda secrets)
+ayrton github-bot config
+
+# Instala el App en un repo
+ayrton github-bot install --repo owner/repo
+
+# Servidor webhook (deploy en fly.io/Cloud Run)
+ayrton github-bot serve --port 8080
+
+# Test local con payload grabado
+ayrton github-bot once --payload-file webhook.json
+```
+
+### Qué hace
+
+| Evento | Acción |
+|--------|--------|
+| `pull_request.opened/synchronize` | Auto-review: checkout → `ayrton sdd verify` → comment con resumen |
+| `@ayrton propose/spec/design/tasks/apply/verify/help` en comentario | Ejecuta fase SDD correspondiente, streamea resultado al PR |
+| `installation.created/deleted` | Sincroniza config por repo |
+
+### Configuración (`~/.ayrton.yaml`)
+
+```yaml
+github_bot:
+  app_id: "123456"
+  private_key_path: "/path/to/private-key.age"  # age-encrypted
+  webhook_secret: "your-webhook-secret"
+  installations:
+    "owner/repo":
+      installation_id: 98765
+      auto_review_enabled: true
+      mentions_enabled: true
+```
+
+### Deploy (fly.io)
+
+```bash
+flyctl launch --dockerfile Dockerfile.fly
+flyctl secrets set WEBHOOK_SECRET=... PRIVATE_KEY_B64=$(base64 -w0 private-key.age)
+flyctl deploy
+```
+
+El bot usa **Engram** para idempotency (evita procesar webhooks duplicados) y contexto de sesión (inyecta observaciones relevantes en cada fase SDD).
 
 ---
 
