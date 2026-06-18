@@ -26,7 +26,7 @@ jobs:
           cache: true
 
       - name: Set local module replace (for PR builds)
-        run: go mod edit -replace github.com/mauroociappinaph/ayrton=./ && go mod edit -replace github.com/mauroociappina/ayrton=./
+        run: go mod edit -replace github.com/mauroociappina/ayrton=./
 
       - name: Run vet
         run: go vet ./...
@@ -60,7 +60,7 @@ jobs:
           cache: true
 
       - name: Set local module replace (for PR builds)
-        run: go mod edit -replace github.com/mauroociappinaph/ayrton=./ && go mod edit -replace github.com/mauroociappina/ayrton=./
+        run: go mod edit -replace github.com/mauroociappina/ayrton=./
 
       - name: Resolve modules with replace directive
         run: go build ./...
@@ -88,7 +88,7 @@ jobs:
           cache: true
 
       - name: Set local module replace (for PR builds)
-        run: go mod edit -replace github.com/mauroociappinaph/ayrton=./ && go mod edit -replace github.com/mauroociappina/ayrton=./
+        run: go mod edit -replace github.com/mauroociappina/ayrton=./
 
       - name: Build
         run: |
