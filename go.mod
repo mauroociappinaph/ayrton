@@ -2,6 +2,8 @@ module github.com/mauroociappinaph/ayrton
 
 go 1.25.5
 
+replace github.com/mauroociappinaph/ayrton => ./
+
 require (
 	filippo.io/age v1.3.1
 	github.com/bradleyfalzon/ghinstallation/v2 v2.19.0
