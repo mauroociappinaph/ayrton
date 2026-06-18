@@ -28,9 +28,6 @@ jobs:
       - name: Set local module replace (for PR builds)
         run: go mod edit -replace github.com/mauroociappinaph/ayrton=./
 
-      - name: Install dependencies
-        run: go mod download
-
       - name: Run vet
         run: go vet ./...
 
@@ -65,9 +62,6 @@ jobs:
       - name: Set local module replace (for PR builds)
         run: go mod edit -replace github.com/mauroociappinaph/ayrton=./
 
-      - name: Download dependencies
-        run: go mod download
-
       - name: Install golangci-lint
         uses: golangci/golangci-lint-action@v9
         with:
@@ -92,9 +86,6 @@ jobs:
 
       - name: Set local module replace (for PR builds)
         run: go mod edit -replace github.com/mauroociappinaph/ayrton=./
-
-      - name: Sync dependencies
-        run: go mod download
 
       - name: Build
         run: |
