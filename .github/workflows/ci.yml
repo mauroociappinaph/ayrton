@@ -59,10 +59,10 @@ jobs:
           go-version: '1.25'
           cache: true
 
-      - name: Set local module replace (for PR builds)
-        run: go mod edit -replace github.com/mauroociappina/ayrton=./
+      - name: Set GOPRIVATE for local modules
+        run: echo "GOPRIVATE=github.com/mauroociappina/ayrton,github.com/mauroociappinaph/ayrton" >> $GITHUB_ENV
 
-      - name: Resolve modules with replace directive
+      - name: Resolve modules
         run: go build ./...
 
       - name: Install golangci-lint
